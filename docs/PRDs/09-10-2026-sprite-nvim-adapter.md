@@ -1,7 +1,9 @@
 # sprite.nvim: the editor adapter
 
-**Status:** design approved 2026-09-10; awaiting the TSP.
-**Depends on:** Sprite v0.1.5's Surface Channel and grid Surface, plus two
+**Status:** design approved and hardened 2026-09-10 (composed text in scope,
+nested editors fail open, hangup exit code 129, paste routed to the Surface
+with the pty drained); awaiting two TSPs, Sprite's additions first.
+**Depends on:** Sprite v0.1.5's Surface Channel and grid Surface, plus three
 small Sprite additions this document specifies.
 **Repository:** `HundredBillion/sprite.nvim`. This is the first of three PRDs
 for the repository; the plugin API and the distribution follow it.
@@ -91,8 +93,9 @@ the single grid and Sprite paints the result.
   rendering, the configured line height and padding, colours from the
   theme's `[highlights]` table by group name, a cursor that changes shape
   with the mode. Typing, including shifted symbols, dead keys, and input
-  methods, produces the right characters. The wheel scrolls; clicks place
-  the cursor; drags select. Resizing the pane resizes the editor.
+  methods, produces the right characters. Ctrl+Shift+V pastes into the
+  editor. The wheel scrolls; clicks place the cursor; drags select.
+  Resizing the pane resizes the editor.
 - Quitting returns the prompt in the same directory, and `$?` is Neovim's
   exit code.
 - In Ghostty, Kitty, or any other terminal, `sprite-nvim .` is plain
@@ -109,8 +112,12 @@ Three files in this repository do the work. Nothing is compiled.
 A POSIX shell script that takes exactly Neovim's arguments.
 
 - If any of `SPRITE_SURFACE_SOCKET`, `SPRITE_SURFACE_KEY`, or `SPRITE_PANE`
-  is absent from the environment, it runs `exec nvim "$@"` and is gone. This is the whole
-  fail-open path outside Sprite: one process, no adapter started.
+  is absent from the environment, or `NVIM` is present, it runs
+  `exec nvim "$@"` and is gone. This is the whole fail-open path outside
+  Sprite: one process, no adapter started. `NVIM` is set by Neovim for
+  every process started from its `:terminal`, so a nested editor runs in
+  text mode inside the terminal buffer, as it does in any other terminal,
+  instead of opening a second `fill` Surface over the first.
 - Otherwise it runs `exec nvim -l <repo>/lua/sprite/adapter.lua "$@"`, so
   the adapter *is* the process the shell started.
 - "The real `nvim`" means the first `nvim` on PATH that is not this script
@@ -142,7 +149,10 @@ The process that lives for the whole editing session.
 Neovim's standard streams are pipes to the adapter, so nothing Neovim
 prints reaches the terminal grid; the pane shows only the Surface. The
 adapter itself writes nothing to the terminal, ever, because its standard
-streams are what the Surface replaced.
+streams are what the Surface replaced. It does read its own standard input,
+the pane's pty, for the whole session and discards every byte: the editor's
+input arrives over the socket, and anything that reaches the pty by another
+route must not be left there for the shell to read after the editor quits.
 
 ### Fail-open inside the adapter
 
@@ -169,7 +179,7 @@ each Neovim frame in one step. The translation is fixed and stateless:
 | `hl_group_set` | `highlights.groups`, the group name to id map that lets Sprite's `[highlights]` table restyle by name. |
 | `default_colors_set` | `defaults`. |
 | `mode_info_set` | Remembered as the one piece of state: the cursor shape and blink for each mode. |
-| `mode_change` | `cursor` with the shape and blink of the new mode. |
+| `mode_change` | `cursor` with the shape and blink of the new mode. Blink is true when the mode's `blinkon` and `blinkoff` are both above zero, which is how `guicursor` spells a blinking cursor. |
 | `grid_cursor_goto` | `cursor` with the new row and column. |
 | `busy_start` / `busy_stop` | `cursor` with `visible` false / true. |
 | `grid_scroll` | `scroll`. |
@@ -194,31 +204,43 @@ cell size.
 | Surface event | Neovim call |
 |---|---|
 | `{"type":"input","key":K}` | `nvim_input` with `K` rewritten from GPUI's notation (`ctrl-shift-a`, `enter`, `escape`, `pageup`) to Neovim's angle brackets (`<C-S-a>`, `<CR>`, `<Esc>`, `<PageUp>`). The modifier letters are `C` for ctrl, `M` for alt, `S` for shift, `D` for cmd. |
-| `{"type":"input","key":K,"text":T}` | `nvim_input` with `T`, and `<` in `T` sent as `<lt>`. When text is present, the key name is ignored: the text is what the keystroke produced, layout, dead keys, and input methods already applied. |
+| `{"type":"input","key":K,"text":T}` or `{"type":"input","text":T}` | `nvim_input` with `T`, and `<` in `T` sent as `<lt>`. When text is present, the key name, if any, is ignored: the text is what the person typed, with layout, dead keys, and input methods already applied. |
 | `{"type":"mouse",...}` | `nvim_input_mouse(button, action, modifiers, 0, row, col)` with the fields passed straight through; grid 0 because the adapter does not use `ext_multigrid`. |
+| `{"type":"paste","text":T}` | `nvim_paste(T, true, -1)`, so a paste lands as one edit with Neovim's own paste handling. |
 | `{"type":"resize",...}` | `nvim_ui_try_resize(cols, rows)`. |
 | `{"type":"focus"}` / `{"type":"blur"}` | `nvim_ui_set_focus(true)` / `nvim_ui_set_focus(false)`, so `FocusGained` and `FocusLost` autocommands behave as in a terminal. |
 | `{"type":"warning",...}` | Written to the log. A refused operation is an adapter bug, not something the person can act on. |
 | `{"type":"refused",...}`, `{"type":"closed"}`, end of stream | The session is over (below). |
 
 The key-name table is complete for every name GPUI produces on macOS and
-Linux, and every pair is a test case.
+Linux, and every pair is a test case. A key name outside the table is
+logged and dropped rather than guessed.
 
-## Two Sprite additions
+## Three Sprite additions
 
-Both are small changes to Sprite's existing Surface wrapper and event
+All three are small changes to Sprite's existing Surface wrapper and event
 writers, delivered as a TSP in the Sprite repository that cites this
-document. Sprite's protocol version stays 1: both are additive fields and a
-new event type that older clients ignore.
+document. Sprite's protocol version stays 1: they are additive fields and
+new event types that older clients ignore.
 
-1. **Input events carry the produced text.** Today a Surface's keystroke
-   event carries only the key name and modifiers (`shift-1`), while the
-   terminal pane receives typed text through GPUI's input handler and types
-   `!` correctly. The event becomes
-   `{"type":"input","key":"shift-1","text":"!"}` whenever the keystroke
-   produced text, and stays as it is when it did not (`ctrl-a`, `escape`).
-   This is what makes shifted symbols, dead keys, and input methods type
-   correctly into any Surface, not only the editor's.
+1. **Surfaces receive typed text, produced and composed.** Today a Surface's
+   keystroke event carries only the key name and modifiers (`shift-1`),
+   while the terminal pane types on two paths: a key press arrives with the
+   character it produced, and composed text (dead keys such as option-e
+   then e, or an input method such as Japanese) arrives through GPUI's
+   input handler as a commit. Surfaces get both paths:
+   - The key event becomes `{"type":"input","key":"shift-1","text":"!"}`
+     whenever the keystroke produced text, and stays as it is when it did
+     not (`ctrl-a`, `escape`).
+   - The focused Surface registers an input handler, as the terminal pane
+     does. A committed composition arrives as `{"type":"input","text":T}`
+     with no `key`. While a composition is in progress, a grid Surface
+     draws the marked text at its cursor cell, as the terminal pane draws
+     its own, and places the candidate window there; an element Surface
+     shows nothing until the commit.
+   A key press that is part of a composition is not also reported as a key
+   event, so nothing types twice.
+
 2. **Grid Surfaces report the mouse in cells.** A grid Surface today swallows
    clicks and the wheel. It reports
    `{"type":"mouse","button":B,"action":A,"modifiers":M,"row":R,"col":C}`
@@ -233,13 +255,25 @@ new event type that older clients ignore.
 Element Surfaces (box, text, list, image, button) are unchanged by the
 second addition; their click reporting by button name stays as it is.
 
+3. **Paste goes to the focused Surface, never to the pty.** Today Sprite
+   intercepts Ctrl+Shift+V before any Surface sees it and writes the
+   clipboard into the pane's pty. While the adapter is the pane's foreground
+   process nothing reads that pty, so the text would sit there and be typed
+   into the shell the moment the editor quits. With a Surface focused, the
+   paste shortcut instead sends `{"type":"paste","text":T}` to that Surface,
+   and the copy shortcut does nothing, since a Surface has no terminal
+   selection. Both shortcuts behave as before when the terminal holds focus.
+
 ## Focus
 
 A `fill` Surface takes the keyboard when it opens, which is what an editor
-wants. Sprite's own shortcuts, such as the focus cycle and pane commands,
-are intercepted before the Surface sees them, so they keep working. The
-adapter never hands focus back to the terminal on its own; the terminal
-behind a `fill` Surface has nothing to show.
+wants. Sprite's own shortcuts are intercepted before the Surface sees them,
+so they keep working, and the editor never receives them: today those are
+Ctrl+Shift+C and Ctrl+Shift+V for copy and paste, Ctrl+Shift+Space for the
+focus cycle, and the window and pane commands on the platform modifier.
+Everything else reaches Neovim. The adapter never hands focus back to the
+terminal on its own; the terminal behind a `fill` Surface has nothing to
+show.
 
 ## Lifecycle and failure
 
@@ -249,7 +283,8 @@ drops. The shell prompt returns in the same directory with `$?` intact.
 
 **Sprite goes away first.** If the socket closes, or a `refused` or
 `closed` line arrives, while the editor is running, the adapter kills the
-editor process and exits. This is what happens to text-mode Neovim when a
+editor process and exits with code 129, the value a shell reports for a
+process ended by a hangup. This is what happens to text-mode Neovim when a
 terminal closes today; Neovim's swap files preserve unsaved work. No
 attempt is made to quit the editor politely, because the alternative rule
 (quit only when no buffer is modified, otherwise kill) adds a decision the
@@ -291,25 +326,32 @@ framework to install. Three layers:
   `nvim --embed --clean`. The test asserts that the first batch after attach
   contains the tilde-filled rows Neovim draws for an empty buffer; that an
   `input` event typed through the socket appears in the next rows; that
-  closing the socket ends both processes; and that a `refused` answer to the
-  open runs the real editor and returns its exit code.
+  closing the socket ends both processes; that bytes written to the
+  adapter's standard input during the session are consumed and never reach
+  the process that follows it; and that a `refused` answer to the open runs
+  the real editor and returns its exit code.
 - **Fail-open at the shell.** The script with the variables unset runs the
   real `nvim` and returns its exit code, verified with `nvim --version` and
   with `nvim -c 'cquit 3'`.
 
-Sprite's two additions are covered by Rust unit tests in Sprite's channel
+Sprite's three additions are covered by Rust unit tests in Sprite's channel
 and wrapper modules: the input event line carries `text` when the keystroke
-has one and omits it otherwise; a grid Surface turns a press at a pixel
+has one and omits it otherwise; a committed composition on a focused Surface
+becomes an input event with text and no key, and a commit with no
+composition in progress sends nothing; the paste shortcut with a Surface
+focused sends a paste event to it and writes nothing to the pty; a grid Surface turns a press at a pixel
 position into the right cell, clamps positions outside the grid, and reports
 a wheel detent as one event.
 
 Continuous integration on GitHub Actions runs the adapter tests on Linux and
-macOS against Neovim stable and nightly, plus `stylua --check`. The Sprite
+macOS against Neovim 0.11 (the floor), stable, and nightly, plus
+`stylua --check`. The Sprite
 half goes through Sprite's own CI.
 
 **Done means** the project owner's LazyVim configuration runs in Sprite all
 day: open, edit, search, use the file picker, scroll with the wheel, click
-to place the cursor, drag to select, resize the pane, quit, and get the
+to place the cursor, drag to select, type a dead-key character (option-e
+then e gives é on a macOS keyboard), resize the pane, quit, and get the
 prompt back with the exit code. That is the by-hand proof, run the same way
 the Native Surfaces proofs were.
 
@@ -318,7 +360,8 @@ the Native Surfaces proofs were.
 - Neovim 0.11 or later runs the adapter (`vim.uv`, `vim.mpack`, `vim.json`,
   `nvim -l`, and `nvim_ui_set_focus` are all present). The embedded editor
   is the same binary, so the same floor applies.
-- Sprite with the two additions above; Surface Channel protocol version 1.
+- Sprite 0.1.6 or later, the release carrying the three additions above;
+  Surface Channel protocol version 1.
 - No dependencies beyond Neovim and a POSIX shell. No compiled code. No
   Rust in this repository.
 - Lua formatted by `stylua`; every source file passes `stylua --check`.
@@ -334,4 +377,5 @@ Recorded so they are not forgotten, and deliberately not in this release:
 - Externalised popup menu, command line, and messages drawn as element
   Surfaces.
 - Forwarding `set_title` to the pane's title once Sprite has one.
-- Bracketed paste and drag-and-drop of files into the editor.
+- Pointer movement without a button held, for Neovim's `mousemoveevent`.
+- Drag-and-drop of files into the editor.
