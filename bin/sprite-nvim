@@ -1,0 +1,47 @@
+#!/bin/sh
+# sprite-nvim — draw Neovim through a Sprite grid Surface, or fall open to
+# plain Neovim. Takes exactly Neovim's arguments.
+set -eu
+
+# Absolute path to this script, so we can exclude it when finding the real nvim.
+self=$0
+case "$self" in
+  /*) ;;
+  */*) self=$(cd "$(dirname "$self")" && pwd -P)/$(basename "$self") ;;
+  *) self=$(command -v -- "$self") ;;
+esac
+
+# The real nvim: the first `nvim` on PATH that is not this script or a link to
+# it. Lets the distribution later install this script *as* `nvim` without a loop.
+real_nvim=nvim
+OLDIFS=$IFS
+IFS=:
+for dir in $PATH; do
+  [ -n "$dir" ] || dir=.
+  cand=$dir/nvim
+  if [ -x "$cand" ]; then
+    resolved=$(cd "$(dirname "$cand")" 2>/dev/null && pwd -P)/nvim || continue
+    [ "$resolved" = "$self" ] && continue
+    real_nvim=$cand
+    break
+  fi
+done
+IFS=$OLDIFS
+
+# Fail open: outside Sprite, missing credentials, or nested in a :terminal
+# (Neovim sets NVIM for its :terminal children). One process, no adapter.
+if [ -z "${SPRITE_SURFACE_SOCKET:-}" ] || [ -z "${SPRITE_SURFACE_KEY:-}" ] \
+  || [ -z "${SPRITE_PANE:-}" ] || [ -n "${NVIM:-}" ]; then
+  exec "$real_nvim" "$@"
+fi
+
+# Non-editing invocations draw nothing, so they get plain Neovim: version and
+# help print and exit; -l runs a script; -es/-Es is silent ex mode with no UI.
+case "${1:-}" in
+  --version | -v | --help | -h | -l | -es | -Es | --api-info)
+    exec "$real_nvim" "$@"
+    ;;
+esac
+
+repo=$(cd "$(dirname "$self")/.." && pwd -P)
+exec "$real_nvim" -l "$repo/lua/sprite/adapter.lua" "$@"

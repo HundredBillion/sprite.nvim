@@ -69,7 +69,7 @@ Decisions locked here so the executor does not re-decide them (ponytail: the laz
 - Consumes: the environment (`SPRITE_SURFACE_SOCKET`, `SPRITE_SURFACE_KEY`, `SPRITE_PANE`, `NVIM`, `PATH`), and `<repo>/lua/sprite/adapter.lua` (created in Task 6; the launcher only references its path).
 - Produces: an executable that either `exec`s the real `nvim` with the given args, or `exec nvim -l <repo>/lua/sprite/adapter.lua <args>`.
 
-- [ ] **Step 1: Write the test harness and the failing launcher test**
+- [x] **Step 1: Write the test harness and the failing launcher test**
 
 Create `tests/run.lua`:
 
@@ -147,12 +147,12 @@ T.eq(select(3, run({ NVIM = "/tmp/x", SPRITE_SURFACE_SOCKET = "/tmp/s", SPRITE_S
 T.eq(select(3, run({ SPRITE_SURFACE_SOCKET = "/tmp/s", SPRITE_SURFACE_KEY = "k", SPRITE_PANE = "1" }, "--version")), 0, "--version falls open (prints and exits 0)")
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `nvim -l tests/run.lua`
 Expected: FAIL — `bin/sprite-nvim` does not exist, so the launcher runs error and the exit codes are wrong.
 
-- [ ] **Step 3: Write the launcher**
+- [x] **Step 3: Write the launcher**
 
 Create `bin/sprite-nvim` (and `chmod +x` it):
 
@@ -206,12 +206,12 @@ repo=$(cd "$(dirname "$self")/.." && pwd -P)
 exec "$real_nvim" -l "$repo/lua/sprite/adapter.lua" "$@"
 ```
 
-- [ ] **Step 4: Make it executable and run the test to verify it passes**
+- [x] **Step 4: Make it executable and run the test to verify it passes**
 
 Run: `chmod +x bin/sprite-nvim && nvim -l tests/run.lua`
 Expected: PASS. (The adapter path does not exist yet, but every test here takes the fail-open branch, which never references it.)
 
-- [ ] **Step 5: Format and commit**
+- [x] **Step 5: Format and commit**
 
 ```bash
 stylua --check tests/run.lua tests/launcher_spec.lua
@@ -235,7 +235,7 @@ git commit -m "Add the launcher: draw through Sprite, or fall open to plain Neov
   - `state:take_batch() -> table|nil` — called on `flush`: returns the accumulated ops as a Lua array `{op, op, ...}` and clears them, or `nil` if empty.
   - Ops are Lua tables shaped exactly like the JSON Sprite accepts (e.g. `{type="rows", rows={...}}`), so the adapter encodes them with `vim.json.encode` inside a `{type="batch", ops=...}`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `tests/redraw_spec.lua`:
 
@@ -330,12 +330,12 @@ do
 end
 ```
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run: `nvim -l tests/run.lua`
 Expected: FAIL — `lua/sprite/redraw.lua` does not exist.
 
-- [ ] **Step 3: Write the translator**
+- [x] **Step 3: Write the translator**
 
 Create `lua/sprite/redraw.lua`:
 
@@ -482,12 +482,12 @@ end
 return Redraw
 ```
 
-- [ ] **Step 4: Run to verify it passes**
+- [x] **Step 4: Run to verify it passes**
 
 Run: `nvim -l tests/run.lua`
 Expected: PASS for every check in `redraw_spec.lua`.
 
-- [ ] **Step 5: Format and commit**
+- [x] **Step 5: Format and commit**
 
 ```bash
 stylua --check lua/sprite/redraw.lua tests/redraw_spec.lua
@@ -509,7 +509,7 @@ git commit -m "Translate Neovim's redraw stream into grid operations"
   - `Input.call(event) -> {method=string, args=table} | nil` — the Neovim RPC call an event maps to, or `nil` for an event that maps to no call (an unknown key name; a `warning`).
   - `Input.key(name) -> string | nil` — GPUI key name to Neovim angle-bracket form, exposed for direct testing.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `tests/input_spec.lua`:
 
@@ -570,12 +570,12 @@ T.eq(Input.call({ type = "blur" }), { method = "nvim_ui_set_focus", args = { fal
 T.eq(Input.call({ type = "warning", message = "x" }), nil, "warning is not a Neovim call")
 ```
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run: `nvim -l tests/run.lua`
 Expected: FAIL — `lua/sprite/input.lua` does not exist.
 
-- [ ] **Step 3: Write the translator**
+- [x] **Step 3: Write the translator**
 
 Create `lua/sprite/input.lua`:
 
@@ -686,12 +686,12 @@ return Input
 
 Note on the `<lt>` case: `Input.key("<")` returns `"<lt>"` because `base_name` returns `"lt"` and the final branch wraps it as `"<lt>"` (mods empty, base is `"lt"` so the bare-key shortcut is skipped by the `base ~= "lt"` guard). Verify this against the test.
 
-- [ ] **Step 4: Run to verify it passes**
+- [x] **Step 4: Run to verify it passes**
 
 Run: `nvim -l tests/run.lua`
 Expected: PASS.
 
-- [ ] **Step 5: Format and commit**
+- [x] **Step 5: Format and commit**
 
 ```bash
 stylua --check lua/sprite/input.lua tests/input_spec.lua
@@ -716,7 +716,7 @@ git commit -m "Translate Surface events into Neovim input calls"
   - `client:on_notification(fn)` — `fn(method, args)` for every incoming notification.
   - `client:feed(bytes)` — appends bytes and dispatches every complete message (responses to their callbacks, notifications to `fn`).
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `tests/rpc_spec.lua`:
 
@@ -776,12 +776,12 @@ do
 end
 ```
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run: `nvim -l tests/run.lua`
 Expected: FAIL — `lua/sprite/rpc.lua` does not exist.
 
-- [ ] **Step 3: Write the RPC client**
+- [x] **Step 3: Write the RPC client**
 
 Create `lua/sprite/rpc.lua`:
 
@@ -847,12 +847,12 @@ end
 return Rpc
 ```
 
-- [ ] **Step 4: Run to verify it passes**
+- [x] **Step 4: Run to verify it passes**
 
 Run: `nvim -l tests/run.lua`
 Expected: PASS.
 
-- [ ] **Step 5: Format and commit**
+- [x] **Step 5: Format and commit**
 
 ```bash
 stylua --check lua/sprite/rpc.lua tests/rpc_spec.lua
@@ -876,7 +876,7 @@ git commit -m "Speak msgpack-RPC to an embedded Neovim over a pipe"
   - `Log.tracing() -> boolean` — true when `SPRITE_NVIM_TRACE=1`.
   - `Log.open()` / `Log.write(kind, message)` / `Log.trace(direction, text)` — append to the file (creating the directory); `trace` is a no-op unless tracing. These do file I/O and are exercised by the integration test, not unit-tested for content.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `tests/log_spec.lua`:
 
@@ -899,12 +899,12 @@ T.eq(Log.tracing({ SPRITE_NVIM_TRACE = "1" }), true, "trace on")
 T.eq(Log.tracing({}), false, "trace off by default")
 ```
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run: `nvim -l tests/run.lua`
 Expected: FAIL — `lua/sprite/log.lua` does not exist.
 
-- [ ] **Step 3: Write the log**
+- [x] **Step 3: Write the log**
 
 Create `lua/sprite/log.lua`:
 
@@ -962,12 +962,12 @@ end
 return Log
 ```
 
-- [ ] **Step 4: Run to verify it passes**
+- [x] **Step 4: Run to verify it passes**
 
 Run: `nvim -l tests/run.lua`
 Expected: PASS.
 
-- [ ] **Step 5: Format and commit**
+- [x] **Step 5: Format and commit**
 
 ```bash
 stylua --check lua/sprite/log.lua tests/log_spec.lua
@@ -987,7 +987,7 @@ git commit -m "Log to the state directory, never to the terminal"
 - Consumes: `lua/sprite/{rpc,redraw,input,log}.lua`; the environment (`SPRITE_SURFACE_SOCKET`, `SPRITE_SURFACE_KEY`, `SPRITE_PANE`); the script args (`arg`, the user's Neovim arguments); `vim.v.progpath` (the real `nvim`); `vim.uv`; `vim.json`.
 - Produces: an executable Lua program (`nvim -l lua/sprite/adapter.lua <args>`) that draws Neovim through a Surface or falls open, and exits with the right code.
 
-- [ ] **Step 1: Write the adapter**
+- [x] **Step 1: Write the adapter**
 
 Create `lua/sprite/adapter.lua`. Because its correctness is proven by the integration test in Task 7 (a real editor, a real socket), this step writes the whole file; Task 7 then adds the test that must pass.
 
@@ -1254,12 +1254,12 @@ Notes for the implementer:
 - If the embedded editor exits before its first frame (a bad `--embed` argument, say), its `on_exit` sets `editor_exit` and stops the loop; the final `os.exit(editor_exit)` returns that code. The Surface simply never received a batch, and Sprite closes it when the socket drops.
 - The `nvim_ui_attach` response is checked: an error there ends the session rather than leaving a blank Surface. A success carries the channel info, which the adapter ignores.
 
-- [ ] **Step 2: Smoke-check it loads without error**
+- [x] **Step 2: Smoke-check it loads without error**
 
 Run: `SPRITE_SURFACE_SOCKET= SPRITE_SURFACE_KEY= SPRITE_PANE= nvim -l lua/sprite/adapter.lua --headless -c 'cquit 7'`
 Expected: exit 7 — with no credentials the adapter falls open to the real editor immediately, which runs `cquit 7`. (This confirms the file parses and the fail-open path works before the integration test exercises the rest.)
 
-- [ ] **Step 3: Format and commit**
+- [x] **Step 3: Format and commit**
 
 ```bash
 stylua --check lua/sprite/adapter.lua
@@ -1279,7 +1279,7 @@ git commit -m "Draw the editor through a Surface, and fall open when Sprite refu
 - Consumes: `bin/sprite-nvim`, the whole `lua/sprite/` tree, a real `nvim` on PATH.
 - Produces: the end-to-end proof and the speed-gate measurement; CI; user documentation.
 
-- [ ] **Step 1: Write the fake Sprite**
+- [x] **Step 1: Write the fake Sprite**
 
 Create `tests/fake_sprite.lua`:
 
@@ -1344,7 +1344,7 @@ end
 return M
 ```
 
-- [ ] **Step 2: Write the integration test and the speed gate**
+- [x] **Step 2: Write the integration test and the speed gate**
 
 Create `tests/integration_spec.lua`:
 
@@ -1459,12 +1459,12 @@ do
 end
 ```
 
-- [ ] **Step 3: Run the whole suite**
+- [x] **Step 3: Run the whole suite**
 
 Run: `nvim -l tests/run.lua`
 Expected: PASS for every spec, including the integration checks and the speed gate. If the tilde check times out, the adapter is not forwarding the first frame; debug with `SPRITE_NVIM_TRACE=1` against a real Sprite before changing the test.
 
-- [ ] **Step 4: Write CI**
+- [x] **Step 4: Write CI**
 
 Create `.github/workflows/ci.yml`:
 
@@ -1501,7 +1501,7 @@ jobs:
           args: --check bin lua tests
 ```
 
-- [ ] **Step 5: Write the README section**
+- [x] **Step 5: Write the README section**
 
 Add to `README.md`, after the intro:
 
@@ -1530,7 +1530,7 @@ forwarding Sprite's keystrokes, mouse, and paste back. Sprite paints; the
 adapter never does.
 ```
 
-- [ ] **Step 6: Format and commit**
+- [x] **Step 6: Format and commit**
 
 ```bash
 stylua --check tests/fake_sprite.lua tests/integration_spec.lua
