@@ -509,7 +509,7 @@ git commit -m "Translate Neovim's redraw stream into grid operations"
   - `Input.call(event) -> {method=string, args=table} | nil` — the Neovim RPC call an event maps to, or `nil` for an event that maps to no call (an unknown key name; a `warning`).
   - `Input.key(name) -> string | nil` — GPUI key name to Neovim angle-bracket form, exposed for direct testing.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `tests/input_spec.lua`:
 
@@ -570,12 +570,12 @@ T.eq(Input.call({ type = "blur" }), { method = "nvim_ui_set_focus", args = { fal
 T.eq(Input.call({ type = "warning", message = "x" }), nil, "warning is not a Neovim call")
 ```
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run: `nvim -l tests/run.lua`
 Expected: FAIL — `lua/sprite/input.lua` does not exist.
 
-- [ ] **Step 3: Write the translator**
+- [x] **Step 3: Write the translator**
 
 Create `lua/sprite/input.lua`:
 
@@ -686,12 +686,12 @@ return Input
 
 Note on the `<lt>` case: `Input.key("<")` returns `"<lt>"` because `base_name` returns `"lt"` and the final branch wraps it as `"<lt>"` (mods empty, base is `"lt"` so the bare-key shortcut is skipped by the `base ~= "lt"` guard). Verify this against the test.
 
-- [ ] **Step 4: Run to verify it passes**
+- [x] **Step 4: Run to verify it passes**
 
 Run: `nvim -l tests/run.lua`
 Expected: PASS.
 
-- [ ] **Step 5: Format and commit**
+- [x] **Step 5: Format and commit**
 
 ```bash
 stylua --check lua/sprite/input.lua tests/input_spec.lua
