@@ -716,7 +716,7 @@ git commit -m "Translate Surface events into Neovim input calls"
   - `client:on_notification(fn)` — `fn(method, args)` for every incoming notification.
   - `client:feed(bytes)` — appends bytes and dispatches every complete message (responses to their callbacks, notifications to `fn`).
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `tests/rpc_spec.lua`:
 
@@ -776,12 +776,12 @@ do
 end
 ```
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run: `nvim -l tests/run.lua`
 Expected: FAIL — `lua/sprite/rpc.lua` does not exist.
 
-- [ ] **Step 3: Write the RPC client**
+- [x] **Step 3: Write the RPC client**
 
 Create `lua/sprite/rpc.lua`:
 
@@ -847,12 +847,12 @@ end
 return Rpc
 ```
 
-- [ ] **Step 4: Run to verify it passes**
+- [x] **Step 4: Run to verify it passes**
 
 Run: `nvim -l tests/run.lua`
 Expected: PASS.
 
-- [ ] **Step 5: Format and commit**
+- [x] **Step 5: Format and commit**
 
 ```bash
 stylua --check lua/sprite/rpc.lua tests/rpc_spec.lua
