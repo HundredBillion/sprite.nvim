@@ -34,10 +34,18 @@ local drain_handle
 -- closure sees a local, never a global.
 local start_editor
 
--- Fail open: run the real editor on the terminal's own streams, wait, and exit
--- with its code. Used for any refusal before the editor is drawing. Anything
--- still holding fd 0 or the socket must let go first, or the real editor
--- would race the drain reader for the same keystrokes.
+-- Fail open: run the real editor on the terminal's own streams and exit with
+-- its code once it exits. Used for any refusal before the editor is drawing.
+-- Anything still holding fd 0 or the socket must let go first, or the real
+-- editor would race the drain reader for the same keystrokes.
+--
+-- Every call site returns immediately after calling this, so it is safe for
+-- `fail_open` itself to return rather than block: the single `uv.run()` at
+-- the bottom of this file does the waiting. It must not start a second,
+-- nested `uv.run()` here -- most calls happen from inside a callback that is
+-- already running inside that one loop, and a reentrant `uv.run()` returns
+-- immediately without ever processing the spawned editor's exit, losing its
+-- code (silently exiting 0 no matter what the real editor returned).
 local function fail_open(reason)
   Log.write("failopen", reason)
   if drain_handle then
@@ -55,19 +63,16 @@ local function fail_open(reason)
   pcall(function()
     sock:close()
   end)
-  local done
   local handle = uv.spawn(vim.v.progpath, {
     args = user_args,
     stdio = { 0, 1, 2 },
   }, function(code)
-    done = code or 0
+    editor_exit = code or 0
     uv.stop()
   end)
   if not handle then
     os.exit(1)
   end
-  uv.run()
-  os.exit(done or 0)
 end
 
 local function sock_send(obj)
