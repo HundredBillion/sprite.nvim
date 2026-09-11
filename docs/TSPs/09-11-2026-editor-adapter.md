@@ -1279,7 +1279,7 @@ git commit -m "Draw the editor through a Surface, and fall open when Sprite refu
 - Consumes: `bin/sprite-nvim`, the whole `lua/sprite/` tree, a real `nvim` on PATH.
 - Produces: the end-to-end proof and the speed-gate measurement; CI; user documentation.
 
-- [ ] **Step 1: Write the fake Sprite**
+- [x] **Step 1: Write the fake Sprite**
 
 Create `tests/fake_sprite.lua`:
 
@@ -1344,7 +1344,7 @@ end
 return M
 ```
 
-- [ ] **Step 2: Write the integration test and the speed gate**
+- [x] **Step 2: Write the integration test and the speed gate**
 
 Create `tests/integration_spec.lua`:
 
@@ -1459,12 +1459,12 @@ do
 end
 ```
 
-- [ ] **Step 3: Run the whole suite**
+- [x] **Step 3: Run the whole suite**
 
 Run: `nvim -l tests/run.lua`
 Expected: PASS for every spec, including the integration checks and the speed gate. If the tilde check times out, the adapter is not forwarding the first frame; debug with `SPRITE_NVIM_TRACE=1` against a real Sprite before changing the test.
 
-- [ ] **Step 4: Write CI**
+- [x] **Step 4: Write CI**
 
 Create `.github/workflows/ci.yml`:
 
@@ -1501,7 +1501,7 @@ jobs:
           args: --check bin lua tests
 ```
 
-- [ ] **Step 5: Write the README section**
+- [x] **Step 5: Write the README section**
 
 Add to `README.md`, after the intro:
 
@@ -1530,7 +1530,7 @@ forwarding Sprite's keystrokes, mouse, and paste back. Sprite paints; the
 adapter never does.
 ```
 
-- [ ] **Step 6: Format and commit**
+- [x] **Step 6: Format and commit**
 
 ```bash
 stylua --check tests/fake_sprite.lua tests/integration_spec.lua
