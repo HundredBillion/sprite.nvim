@@ -987,7 +987,7 @@ git commit -m "Log to the state directory, never to the terminal"
 - Consumes: `lua/sprite/{rpc,redraw,input,log}.lua`; the environment (`SPRITE_SURFACE_SOCKET`, `SPRITE_SURFACE_KEY`, `SPRITE_PANE`); the script args (`arg`, the user's Neovim arguments); `vim.v.progpath` (the real `nvim`); `vim.uv`; `vim.json`.
 - Produces: an executable Lua program (`nvim -l lua/sprite/adapter.lua <args>`) that draws Neovim through a Surface or falls open, and exits with the right code.
 
-- [ ] **Step 1: Write the adapter**
+- [x] **Step 1: Write the adapter**
 
 Create `lua/sprite/adapter.lua`. Because its correctness is proven by the integration test in Task 7 (a real editor, a real socket), this step writes the whole file; Task 7 then adds the test that must pass.
 
@@ -1254,12 +1254,12 @@ Notes for the implementer:
 - If the embedded editor exits before its first frame (a bad `--embed` argument, say), its `on_exit` sets `editor_exit` and stops the loop; the final `os.exit(editor_exit)` returns that code. The Surface simply never received a batch, and Sprite closes it when the socket drops.
 - The `nvim_ui_attach` response is checked: an error there ends the session rather than leaving a blank Surface. A success carries the channel info, which the adapter ignores.
 
-- [ ] **Step 2: Smoke-check it loads without error**
+- [x] **Step 2: Smoke-check it loads without error**
 
 Run: `SPRITE_SURFACE_SOCKET= SPRITE_SURFACE_KEY= SPRITE_PANE= nvim -l lua/sprite/adapter.lua --headless -c 'cquit 7'`
 Expected: exit 7 — with no credentials the adapter falls open to the real editor immediately, which runs `cquit 7`. (This confirms the file parses and the fail-open path works before the integration test exercises the rest.)
 
-- [ ] **Step 3: Format and commit**
+- [x] **Step 3: Format and commit**
 
 ```bash
 stylua --check lua/sprite/adapter.lua
