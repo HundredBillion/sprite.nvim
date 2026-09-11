@@ -235,7 +235,7 @@ git commit -m "Add the launcher: draw through Sprite, or fall open to plain Neov
   - `state:take_batch() -> table|nil` — called on `flush`: returns the accumulated ops as a Lua array `{op, op, ...}` and clears them, or `nil` if empty.
   - Ops are Lua tables shaped exactly like the JSON Sprite accepts (e.g. `{type="rows", rows={...}}`), so the adapter encodes them with `vim.json.encode` inside a `{type="batch", ops=...}`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `tests/redraw_spec.lua`:
 
@@ -330,12 +330,12 @@ do
 end
 ```
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run: `nvim -l tests/run.lua`
 Expected: FAIL — `lua/sprite/redraw.lua` does not exist.
 
-- [ ] **Step 3: Write the translator**
+- [x] **Step 3: Write the translator**
 
 Create `lua/sprite/redraw.lua`:
 
@@ -482,12 +482,12 @@ end
 return Redraw
 ```
 
-- [ ] **Step 4: Run to verify it passes**
+- [x] **Step 4: Run to verify it passes**
 
 Run: `nvim -l tests/run.lua`
 Expected: PASS for every check in `redraw_spec.lua`.
 
-- [ ] **Step 5: Format and commit**
+- [x] **Step 5: Format and commit**
 
 ```bash
 stylua --check lua/sprite/redraw.lua tests/redraw_spec.lua
