@@ -27,6 +27,7 @@
 - **Redraw notification.** `{2, "redraw", events}` where `events` is a list and each `event` is `{name, arg_tuple, arg_tuple, ...}`: the first element is the event name and the rest are one or more argument tuples (a single `grid_line` event carries many line tuples).
 - **Embedding.** `vim.uv.spawn(vim.v.progpath, {args = {"--embed", <user args...>}, stdio = {stdin_pipe, stdout_pipe, 2}}, on_exit)`. Send `nvim_ui_attach` as a request; the child then streams `redraw` notifications on its stdout pipe. `vim.v.progpath` is the running Neovim's own binary, which the launcher guarantees is the real `nvim`.
 - **Sprite socket.** A Unix domain socket; connect with `local sock = vim.uv.new_pipe(false); sock:connect(path, cb)`. Traffic is newline-delimited JSON. The handshake is one line: the key, a space, then the open message, then `\n`. Sprite replies with `{"type":"opened","surface":N}` or a refusal line, then streams event lines.
+- **Line size.** Sprite reads each socket line with a 16 MiB cap (`MAX_MESSAGE_BYTES`). A full 200x60 repaint batch is about 99 KB, so one frame per line is safe with wide margin; no chunking is needed.
 - **Grid-op JSON (what Sprite accepts).** A cursor op **requires** `row` and `col` every time. Cell tuples are `[text]`, `[text, hl]`, or `[text, hl, repeat]`; an omitted `hl` repeats the previous cell's. Colours are `"#rrggbb"` strings; `underline` is `false` or one of `"single"`, `"double"`, `"curly"`, `"dotted"`, `"dashed"`. Highlight id `0` cannot be defined. Ops: `rows`, `highlights` (`define`+`groups`), `defaults`, `cursor`, `resize`, `scroll`, `clear`, and `batch` (`{"type":"batch","ops":[...]}`).
 
 ---
@@ -142,6 +143,8 @@ T.eq(select(3, run({}, "--headless -c 'cquit 0'")), 0, "fail-open returns nvim's
 T.eq(select(3, run({}, "--headless -c 'cquit 3'")), 3, "fail-open returns nvim's exit 3")
 -- NVIM set (a nested :terminal editor) also falls open.
 T.eq(select(3, run({ NVIM = "/tmp/x", SPRITE_SURFACE_SOCKET = "/tmp/s", SPRITE_SURFACE_KEY = "k", SPRITE_PANE = "1" }, "--headless -c 'cquit 4'")), 4, "NVIM present falls open")
+-- A non-editing flag falls open even with full credentials.
+T.eq(select(3, run({ SPRITE_SURFACE_SOCKET = "/tmp/s", SPRITE_SURFACE_KEY = "k", SPRITE_PANE = "1" }, "--version")), 0, "--version falls open (prints and exits 0)")
 ```
 
 - [ ] **Step 2: Run the test to verify it fails**
@@ -190,6 +193,14 @@ if [ -z "${SPRITE_SURFACE_SOCKET:-}" ] || [ -z "${SPRITE_SURFACE_KEY:-}" ] \
   || [ -z "${SPRITE_PANE:-}" ] || [ -n "${NVIM:-}" ]; then
   exec "$real_nvim" "$@"
 fi
+
+# Non-editing invocations draw nothing, so they get plain Neovim: version and
+# help print and exit; -l runs a script; -es/-Es is silent ex mode with no UI.
+case "${1:-}" in
+  --version | -v | --help | -h | -l | -es | -Es | --api-info)
+    exec "$real_nvim" "$@"
+    ;;
+esac
 
 repo=$(cd "$(dirname "$self")/.." && pwd -P)
 exec "$real_nvim" -l "$repo/lua/sprite/adapter.lua" "$@"
@@ -1117,7 +1128,14 @@ function start_editor(cols, rows)
     end
     rpc:feed(data)
   end)
-  rpc:request("nvim_ui_attach", { cols, rows, { rgb = true, ext_linegrid = true } })
+  rpc:request("nvim_ui_attach", { cols, rows, { rgb = true, ext_linegrid = true } }, function(err)
+    if err ~= nil and err ~= vim.NIL then
+      Log.write("attach", "nvim_ui_attach failed: " .. vim.inspect(err))
+      -- The editor is spawned but will not draw; end the session like a
+      -- refusal so the person is not left with a blank Surface.
+      sprite_gone("attach failed")
+    end
+  end)
 end
 
 -- Read the socket: split newline-delimited JSON, decode, dispatch.
@@ -1148,11 +1166,25 @@ end
 
 -- Drain our own standard input for the whole session and discard it: the
 -- editor's input arrives over the socket, and anything reaching the pty by
--- another route must not be left for the shell to read after we exit.
+-- another route must not be left for the shell to read after we exit. In a
+-- Sprite pane fd 0 is a tty; a pipe or file when run from a test or a script.
 local function drain_stdin()
-  local stdin = uv.new_pipe(false)
-  stdin:open(0)
-  stdin:read_start(function() end)
+  local kind = uv.guess_handle(0)
+  local stdin
+  if kind == "tty" then
+    stdin = uv.new_tty(0, true)
+  else
+    stdin = uv.new_pipe(false)
+    local ok = pcall(function()
+      stdin:open(0)
+    end)
+    if not ok then
+      return
+    end
+  end
+  if stdin then
+    stdin:read_start(function() end)
+  end
 end
 
 -- Connect, handshake, then read the first reply (opened or a refusal).
@@ -1219,6 +1251,8 @@ Notes for the implementer:
 - `start_editor` is assigned to a name used earlier in a closure; keep the `function start_editor(...)` form after a `local` forward declaration if `stylua`/`luacheck` prefers, or reorder so it is defined before `on_surface_event`. Ensure no global leaks (run with `nvim -l` and check `_G.start_editor` is not set; make it `local`).
 - The handshake reader consumes the first line only, then `read_stop`s and restarts with `on_socket`; the buffered remainder is processed. This avoids two readers on one pipe.
 - `uv.run()` returns when `uv.stop()` is called (editor exit, or `sprite_gone`). The final `os.exit` carries the editor's code for a normal exit; `sprite_gone` exits 129 itself.
+- If the embedded editor exits before its first frame (a bad `--embed` argument, say), its `on_exit` sets `editor_exit` and stops the loop; the final `os.exit(editor_exit)` returns that code. The Surface simply never received a batch, and Sprite closes it when the socket drops.
+- The `nvim_ui_attach` response is checked: an error there ends the session rather than leaving a blank Surface. A success carries the channel info, which the adapter ignores.
 
 - [ ] **Step 2: Smoke-check it loads without error**
 
