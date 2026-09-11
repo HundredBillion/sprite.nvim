@@ -13,6 +13,9 @@ local function adapter_env(sock)
     HOME = uv.os_getenv("HOME") or "/tmp",
     SPRITE_NVIM_TRACE = "1",
     XDG_STATE_HOME = sock .. ".state",
+    -- DIAGNOSTIC (Problem B): make nvim (adapter and embedded) write its own
+    -- internal log so we can see where the embedded editor stalls on Linux.
+    NVIM_LOG_FILE = sock .. ".nvimlog",
   }
   local merged = vim.fn.environ()
   for k, v in pairs(overrides) do
@@ -38,6 +41,16 @@ local function dump_adapter_log(sock, label)
     print("(no adapter log file)")
   end
   print("---- end adapter trace [" .. label .. "] ----")
+  local np = sock .. ".nvimlog"
+  print("---- nvim log [" .. label .. "] " .. np .. " ----")
+  local nf = io.open(np, "r")
+  if nf then
+    io.write(nf:read("*a") or "")
+    nf:close()
+  else
+    print("(no nvim log file)")
+  end
+  print("---- end nvim log [" .. label .. "] ----")
 end
 
 -- Rebuilds the little slice of screen a set of collected batch lines describe,
