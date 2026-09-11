@@ -2,17 +2,27 @@ local root = vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":h:h")
 local uv = vim.uv
 
 local function adapter_env(sock)
-  return {
-    "SPRITE_SURFACE_SOCKET=" .. sock,
-    "SPRITE_SURFACE_KEY=testkey",
-    "SPRITE_PANE=1",
-    "PATH=" .. uv.os_getenv("PATH"),
-    "HOME=" .. (uv.os_getenv("HOME") or "/tmp"),
-    -- DIAGNOSTIC (Problem B): trace every socket line in both directions and
-    -- send the adapter's log to a per-check state dir we can print afterwards.
-    "SPRITE_NVIM_TRACE=1",
-    "XDG_STATE_HOME=" .. sock .. ".state",
+  -- DIAGNOSTIC (Problem B): start from the full parent environment, then add
+  -- the Sprite credentials and the trace/state-dir overrides on top. Confirms
+  -- whether the Linux-only embedded-nvim hang is caused by the previously
+  -- stripped env (only SPRITE_*/PATH/HOME) missing something Linux nvim needs.
+  local overrides = {
+    SPRITE_SURFACE_SOCKET = sock,
+    SPRITE_SURFACE_KEY = "testkey",
+    SPRITE_PANE = "1",
+    HOME = uv.os_getenv("HOME") or "/tmp",
+    SPRITE_NVIM_TRACE = "1",
+    XDG_STATE_HOME = sock .. ".state",
   }
+  local merged = vim.fn.environ()
+  for k, v in pairs(overrides) do
+    merged[k] = v
+  end
+  local env = {}
+  for k, v in pairs(merged) do
+    env[#env + 1] = k .. "=" .. v
+  end
+  return env
 end
 
 -- DIAGNOSTIC (Problem B): dump the child adapter's trace log to stdout, which
