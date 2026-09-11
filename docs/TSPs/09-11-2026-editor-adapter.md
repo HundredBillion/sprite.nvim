@@ -69,7 +69,7 @@ Decisions locked here so the executor does not re-decide them (ponytail: the laz
 - Consumes: the environment (`SPRITE_SURFACE_SOCKET`, `SPRITE_SURFACE_KEY`, `SPRITE_PANE`, `NVIM`, `PATH`), and `<repo>/lua/sprite/adapter.lua` (created in Task 6; the launcher only references its path).
 - Produces: an executable that either `exec`s the real `nvim` with the given args, or `exec nvim -l <repo>/lua/sprite/adapter.lua <args>`.
 
-- [ ] **Step 1: Write the test harness and the failing launcher test**
+- [x] **Step 1: Write the test harness and the failing launcher test**
 
 Create `tests/run.lua`:
 
@@ -147,12 +147,12 @@ T.eq(select(3, run({ NVIM = "/tmp/x", SPRITE_SURFACE_SOCKET = "/tmp/s", SPRITE_S
 T.eq(select(3, run({ SPRITE_SURFACE_SOCKET = "/tmp/s", SPRITE_SURFACE_KEY = "k", SPRITE_PANE = "1" }, "--version")), 0, "--version falls open (prints and exits 0)")
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `nvim -l tests/run.lua`
 Expected: FAIL — `bin/sprite-nvim` does not exist, so the launcher runs error and the exit codes are wrong.
 
-- [ ] **Step 3: Write the launcher**
+- [x] **Step 3: Write the launcher**
 
 Create `bin/sprite-nvim` (and `chmod +x` it):
 
@@ -206,12 +206,12 @@ repo=$(cd "$(dirname "$self")/.." && pwd -P)
 exec "$real_nvim" -l "$repo/lua/sprite/adapter.lua" "$@"
 ```
 
-- [ ] **Step 4: Make it executable and run the test to verify it passes**
+- [x] **Step 4: Make it executable and run the test to verify it passes**
 
 Run: `chmod +x bin/sprite-nvim && nvim -l tests/run.lua`
 Expected: PASS. (The adapter path does not exist yet, but every test here takes the fail-open branch, which never references it.)
 
-- [ ] **Step 5: Format and commit**
+- [x] **Step 5: Format and commit**
 
 ```bash
 stylua --check tests/run.lua tests/launcher_spec.lua
