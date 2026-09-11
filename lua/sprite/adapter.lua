@@ -154,10 +154,18 @@ function start_editor(cols, rows)
   attached = true
   local ein = uv.new_pipe(false)
   local eout = uv.new_pipe(false)
+  -- DIAGNOSTIC (Problem B): capture the embedded nvim's stderr into the log
+  -- instead of inheriting fd 2, so a Linux-only startup error becomes visible.
+  local eerr = uv.new_pipe(false)
+  Log.trace(
+    "editor",
+    "spawning " .. tostring(vim.v.progpath) .. " cols=" .. cols .. " rows=" .. rows
+  )
   editor = uv.spawn(vim.v.progpath, {
     args = vim.list_extend({ "--embed" }, user_args),
-    stdio = { ein, eout, 2 },
-  }, function(code)
+    stdio = { ein, eout, eerr },
+  }, function(code, signal)
+    Log.trace("editor", "on_exit code=" .. tostring(code) .. " signal=" .. tostring(signal))
     editor_exit = code or 0
     uv.stop()
   end)
@@ -165,6 +173,12 @@ function start_editor(cols, rows)
     fail_open("could not spawn the editor")
     return
   end
+  Log.trace("editor", "spawned pid=" .. tostring(editor:get_pid()))
+  eerr:read_start(function(err, data)
+    if data then
+      Log.trace("editor-stderr", data)
+    end
+  end)
   rpc = Rpc.new(function(bytes)
     ein:write(bytes)
   end)
@@ -173,9 +187,15 @@ function start_editor(cols, rows)
       on_redraw(method, args)
     end
   end)
+  local got_data = false
   eout:read_start(function(err, data)
     if err or not data then
+      Log.trace("editor-stdout", "read end err=" .. tostring(err))
       return
+    end
+    if not got_data then
+      got_data = true
+      Log.trace("editor-stdout", "first data " .. #data .. " bytes")
     end
     rpc:feed(data)
   end)
@@ -185,6 +205,8 @@ function start_editor(cols, rows)
       -- The editor is spawned but will not draw; end the session like a
       -- refusal so the person is not left with a blank Surface.
       sprite_gone("attach failed")
+    else
+      Log.trace("attach", "nvim_ui_attach ok")
     end
   end)
 end
