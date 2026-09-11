@@ -3,13 +3,23 @@
 # plain Neovim. Takes exactly Neovim's arguments.
 set -eu
 
-# Absolute path to this script, so we can exclude it when finding the real nvim.
+# Absolute path to this script, following symlinks, so `repo` below points at
+# the real checkout even when the script is installed as a symlink on PATH, and
+# so we can exclude the real script when finding the real nvim.
 self=$0
 case "$self" in
   /*) ;;
   */*) self=$(cd "$(dirname "$self")" && pwd -P)/$(basename "$self") ;;
   *) self=$(command -v -- "$self") ;;
 esac
+# Resolve a chain of symlinks the POSIX way (no readlink -f on macOS's sh).
+while [ -L "$self" ]; do
+  link=$(readlink "$self")
+  case "$link" in
+    /*) self=$link ;;
+    *) self=$(cd "$(dirname "$self")" && cd "$(dirname "$link")" && pwd -P)/$(basename "$link") ;;
+  esac
+done
 
 # The real nvim: the first `nvim` on PATH that is not this script or a link to
 # it. Lets the distribution later install this script *as* `nvim` without a loop.
