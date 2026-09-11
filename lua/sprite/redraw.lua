@@ -45,23 +45,6 @@ function Redraw:emit_cursor()
   }
 end
 
--- Like emit_cursor, but a pure visibility toggle (busy_start/busy_stop) rides
--- on whatever cursor op is already pending rather than adding a new one: it
--- carries no information beyond "hide/show at the last known position", so if
--- the tail of the batch is already a cursor op, update it in place instead of
--- emitting a second one. A position (grid_cursor_goto) or mode (mode_change)
--- update is a distinct, meaningful transition and always gets its own op.
-function Redraw:update_cursor_visibility()
-  local c = self.cursor
-  local last = self.ops[#self.ops]
-  if last and last.type == "cursor" then
-    last.row, last.col, last.shape, last.visible, last.blink =
-      c.row, c.col, c.shape, c.visible, c.blink
-  else
-    self:emit_cursor()
-  end
-end
-
 local handlers = {}
 
 function handlers.grid_line(self, t)
@@ -131,12 +114,12 @@ end
 
 function handlers.busy_start(self)
   self.cursor.visible = false
-  self:update_cursor_visibility()
+  self:emit_cursor()
 end
 
 function handlers.busy_stop(self)
   self.cursor.visible = true
-  self:update_cursor_visibility()
+  self:emit_cursor()
 end
 
 function handlers.grid_resize(self, t)
@@ -153,8 +136,8 @@ function handlers.grid_clear(self)
 end
 
 -- One redraw event: {name, tuple, tuple, ...}. Each tuple is applied in order;
--- an event with no known handler is dropped. `flush` and colour of dropped
--- names (set_title, bell, ...) fall through to nothing here.
+-- an event with no known handler is dropped. `flush` and the dropped names
+-- such as set_title and bell fall through to nothing here.
 function Redraw:event(event)
   local handler = handlers[event[1]]
   if not handler then

@@ -85,11 +85,10 @@ do
   s:event({ "grid_cursor_goto", { 1, 1, 1 } })
   s:event({ "busy_start" })
   s:event({ "flush" })
-  T.eq(
-    s:take_batch(),
-    { { type = "cursor", row = 1, col = 1, shape = "block", visible = false, blink = false } },
-    "busy_start hides the cursor"
-  )
+  T.eq(s:take_batch(), {
+    { type = "cursor", row = 1, col = 1, shape = "block", visible = true, blink = false },
+    { type = "cursor", row = 1, col = 1, shape = "block", visible = false, blink = false },
+  }, "busy_start hides the cursor")
 end
 
 -- grid_scroll/clear/resize map to their namesakes; grid 1 fields passed through.
