@@ -180,7 +180,12 @@ function start_editor(cols, rows)
     end
   end)
   rpc = Rpc.new(function(bytes)
-    ein:write(bytes)
+    Log.trace("editor-stdin", "write " .. #bytes .. " bytes")
+    ein:write(bytes, function(werr)
+      if werr then
+        Log.trace("editor-stdin", "write err " .. tostring(werr))
+      end
+    end)
   end)
   rpc:on_notification(function(method, args)
     if method == "redraw" then

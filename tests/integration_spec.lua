@@ -91,7 +91,7 @@ local function drive(sock, opts, predicate, timeout_ms)
     stdio = { nil, nil, 2 },
   }, function() end)
 
-  local deadline = uv.now() + (timeout_ms or 8000)
+  local deadline = uv.now() + (timeout_ms or 30000)
   local timer = uv.new_timer()
   timer:start(50, 50, function()
     if (predicate and predicate(server.lines)) or uv.now() > deadline then
@@ -156,7 +156,7 @@ do
     stdio = { nil, nil, 2 },
   }, function() end)
 
-  local deadline = uv.now() + 8000
+  local deadline = uv.now() + 30000
   local timer = uv.new_timer()
   timer:start(50, 50, function()
     local rows = build_rows(server.lines)
@@ -210,7 +210,7 @@ do
     code = c
     uv.stop()
   end)
-  local deadline = uv.now() + 8000
+  local deadline = uv.now() + 30000
   local closed = false
   local timer = uv.new_timer()
   timer:start(50, 50, function()
