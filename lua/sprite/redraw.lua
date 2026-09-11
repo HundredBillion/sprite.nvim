@@ -82,6 +82,11 @@ function handlers.hl_attr_define(self, t)
   elseif rgb.underline then
     attrs.underline = "single"
   end
+  -- An all-default highlight leaves attrs empty; vim.json.encode({}) is "[]",
+  -- which Sprite refuses (attrs must be an object). vim.empty_dict() encodes {}.
+  if next(attrs) == nil then
+    attrs = vim.empty_dict()
+  end
   self.ops[#self.ops + 1] = { type = "highlights", define = { [tostring(id)] = attrs } }
 end
 

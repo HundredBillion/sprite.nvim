@@ -135,7 +135,13 @@ local function on_surface_event(event)
     Log.write("warning", event.message or "")
     return
   end
-  if t == "refused" or t == "closed" then
+  if t == "refused" then
+    -- Sprite refuses one bad operation and keeps the connection open, so a
+    -- refusal is an adapter bug to log, not a reason to end the session.
+    Log.write("refused", event.reason or "")
+    return
+  end
+  if t == "closed" then
     sprite_gone(t)
     return
   end
@@ -154,18 +160,10 @@ function start_editor(cols, rows)
   attached = true
   local ein = uv.new_pipe(false)
   local eout = uv.new_pipe(false)
-  -- DIAGNOSTIC (Problem B): capture the embedded nvim's stderr into the log
-  -- instead of inheriting fd 2, so a Linux-only startup error becomes visible.
-  local eerr = uv.new_pipe(false)
-  Log.trace(
-    "editor",
-    "spawning " .. tostring(vim.v.progpath) .. " cols=" .. cols .. " rows=" .. rows
-  )
   editor = uv.spawn(vim.v.progpath, {
     args = vim.list_extend({ "--embed" }, user_args),
-    stdio = { ein, eout, eerr },
-  }, function(code, signal)
-    Log.trace("editor", "on_exit code=" .. tostring(code) .. " signal=" .. tostring(signal))
+    stdio = { ein, eout, 2 },
+  }, function(code)
     editor_exit = code or 0
     uv.stop()
   end)
@@ -173,34 +171,17 @@ function start_editor(cols, rows)
     fail_open("could not spawn the editor")
     return
   end
-  Log.trace("editor", "spawned pid=" .. tostring(editor:get_pid()))
-  eerr:read_start(function(err, data)
-    if data then
-      Log.trace("editor-stderr", data)
-    end
-  end)
   rpc = Rpc.new(function(bytes)
-    Log.trace("editor-stdin", "write " .. #bytes .. " bytes")
-    ein:write(bytes, function(werr)
-      if werr then
-        Log.trace("editor-stdin", "write err " .. tostring(werr))
-      end
-    end)
+    ein:write(bytes)
   end)
   rpc:on_notification(function(method, args)
     if method == "redraw" then
       on_redraw(method, args)
     end
   end)
-  local got_data = false
   eout:read_start(function(err, data)
     if err or not data then
-      Log.trace("editor-stdout", "read end err=" .. tostring(err))
       return
-    end
-    if not got_data then
-      got_data = true
-      Log.trace("editor-stdout", "first data " .. #data .. " bytes")
     end
     rpc:feed(data)
   end)
@@ -249,24 +230,21 @@ end
 -- Only called once the Surface path is committed (see `connect`) — never
 -- while a fail-open editor might still need fd 0 for itself.
 local function drain_stdin()
-  local kind = uv.guess_handle(0)
-  local handle
-  if kind == "tty" then
-    local ok, tty = pcall(uv.new_tty, 0, true)
-    if not ok or not tty then
-      return
-    end
-    handle = tty
-  else
-    handle = uv.new_pipe(false)
-    local ok = pcall(function()
-      handle:open(0)
-    end)
-    if not ok then
-      return
-    end
+  -- Only a real pty needs draining: in a Sprite pane fd 0 is the tty whose
+  -- bytes the shell would read after the editor quits, and consuming them keeps
+  -- a stray paste from reaching that shell. When fd 0 is anything else -- a
+  -- pipe, /dev/null, a regular file, as in a test or a redirect -- there is
+  -- nothing a shell reads back, so there is nothing to drain. It matters that
+  -- we skip those: `read_start` on a regular-file fd never yields to the loop
+  -- on Linux, starving the embedded editor's stdout and hanging the session.
+  if uv.guess_handle(0) ~= "tty" then
+    return
   end
-  drain_handle = handle
+  local ok, tty = pcall(uv.new_tty, 0, true)
+  if not ok or not tty then
+    return
+  end
+  drain_handle = tty
   drain_handle:read_start(function() end)
 end
 

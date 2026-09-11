@@ -2,55 +2,17 @@ local root = vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":h:h")
 local uv = vim.uv
 
 local function adapter_env(sock)
-  -- DIAGNOSTIC (Problem B): start from the full parent environment, then add
-  -- the Sprite credentials and the trace/state-dir overrides on top. Confirms
-  -- whether the Linux-only embedded-nvim hang is caused by the previously
-  -- stripped env (only SPRITE_*/PATH/HOME) missing something Linux nvim needs.
-  local overrides = {
-    SPRITE_SURFACE_SOCKET = sock,
-    SPRITE_SURFACE_KEY = "testkey",
-    SPRITE_PANE = "1",
-    HOME = uv.os_getenv("HOME") or "/tmp",
-    SPRITE_NVIM_TRACE = "1",
-    XDG_STATE_HOME = sock .. ".state",
-    -- DIAGNOSTIC (Problem B): make nvim (adapter and embedded) write its own
-    -- internal log so we can see where the embedded editor stalls on Linux.
-    NVIM_LOG_FILE = sock .. ".nvimlog",
+  -- A minimal environment plus the Sprite credentials. XDG_STATE_HOME points
+  -- the adapter's log at a per-socket temp dir so a test never writes to the
+  -- developer's real ~/.local/state/sprite-nvim/adapter.log.
+  return {
+    "SPRITE_SURFACE_SOCKET=" .. sock,
+    "SPRITE_SURFACE_KEY=testkey",
+    "SPRITE_PANE=1",
+    "PATH=" .. (uv.os_getenv("PATH") or ""),
+    "HOME=" .. (uv.os_getenv("HOME") or "/tmp"),
+    "XDG_STATE_HOME=" .. sock .. ".state",
   }
-  local merged = vim.fn.environ()
-  for k, v in pairs(overrides) do
-    merged[k] = v
-  end
-  local env = {}
-  for k, v in pairs(merged) do
-    env[#env + 1] = k .. "=" .. v
-  end
-  return env
-end
-
--- DIAGNOSTIC (Problem B): dump the child adapter's trace log to stdout, which
--- CI captures, turning an opaque timeout into a visible handshake/spawn trace.
-local function dump_adapter_log(sock, label)
-  local path = sock .. ".state/sprite-nvim/adapter.log"
-  print("---- adapter trace [" .. label .. "] " .. path .. " ----")
-  local f = io.open(path, "r")
-  if f then
-    io.write(f:read("*a") or "")
-    f:close()
-  else
-    print("(no adapter log file)")
-  end
-  print("---- end adapter trace [" .. label .. "] ----")
-  local np = sock .. ".nvimlog"
-  print("---- nvim log [" .. label .. "] " .. np .. " ----")
-  local nf = io.open(np, "r")
-  if nf then
-    io.write(nf:read("*a") or "")
-    nf:close()
-  else
-    print("(no nvim log file)")
-  end
-  print("---- end nvim log [" .. label .. "] ----")
 end
 
 -- Rebuilds the little slice of screen a set of collected batch lines describe,
@@ -114,7 +76,7 @@ local function drive(sock, opts, predicate, timeout_ms)
     stdio = { nil, nil, 2 },
   }, function() end)
 
-  local deadline = uv.now() + (timeout_ms or 30000)
+  local deadline = uv.now() + (timeout_ms or 15000)
   local timer = uv.new_timer()
   timer:start(50, 50, function()
     if (predicate and predicate(server.lines)) or uv.now() > deadline then
@@ -148,7 +110,17 @@ do
     end
   end
   T.ok(saw_tilde, "the empty buffer's tildes reach Sprite as rows")
-  dump_adapter_log(sock, "tilde")
+
+  -- Nothing the adapter sends may carry an empty-array highlight value
+  -- ("...":[]) -- the real Sprite refuses it, which would kill the session on
+  -- the first frame. The fake Sprite does not validate, so assert it here.
+  local bad = false
+  for _, l in ipairs(lines) do
+    if l:find('":[]', 1, true) then
+      bad = true
+    end
+  end
+  T.ok(not bad, "no batch carries an empty-array highlight Sprite would refuse")
 end
 
 -- Inbound round-trip: an "input" event sent through the fake Sprite after
@@ -179,7 +151,7 @@ do
     stdio = { nil, nil, 2 },
   }, function() end)
 
-  local deadline = uv.now() + 30000
+  local deadline = uv.now() + 15000
   local timer = uv.new_timer()
   timer:start(50, 50, function()
     local rows = build_rows(server.lines)
@@ -207,7 +179,6 @@ do
     end
   end
   T.ok(saw_abc, "input typed through the fake Sprite reaches Neovim and returns in a rows batch")
-  dump_adapter_log(sock, "input-roundtrip")
 end
 
 -- Socket-drop exit 129: once the session is live (attached and drawing),
@@ -233,7 +204,7 @@ do
     code = c
     uv.stop()
   end)
-  local deadline = uv.now() + 30000
+  local deadline = uv.now() + 15000
   local closed = false
   local timer = uv.new_timer()
   timer:start(50, 50, function()
@@ -251,7 +222,6 @@ do
     child:kill("sigterm")
   end
   T.eq(code, 129, "losing Sprite mid-session kills the editor and exits 129")
-  dump_adapter_log(sock, "socket-drop")
 end
 
 -- A refused open runs the real editor and the adapter exits with its code.

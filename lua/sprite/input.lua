@@ -68,7 +68,13 @@ function Input.key(name)
 end
 
 local function input_call(event)
-  if event.text ~= nil then
+  -- Real typed text wins over the key name -- it has the layout, dead keys, and
+  -- input methods already applied. But GPUI reports Enter as the text "\n" and
+  -- Tab as "\t"; sending those verbatim types Ctrl-J / Ctrl-I and kills every
+  -- <CR>/<Tab> mapping. So text is used only when it has no control character;
+  -- a control-bearing text falls through to the key path, which maps
+  -- enter -> <CR> and tab -> <Tab> (and keeps modifiers, e.g. <C-CR>).
+  if event.text ~= nil and not event.text:find("%c") then
     return { method = "nvim_input", args = { (event.text:gsub("<", "<lt>")) } }
   end
   local key = event.key and Input.key(event.key)

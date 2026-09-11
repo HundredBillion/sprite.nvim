@@ -114,3 +114,16 @@ do
   s:event({ "flush" })
   T.eq(s:take_batch(), nil, "dropped events yield no ops")
 end
+
+-- An all-default hl_attr_define must encode as a JSON object ({}), not an array
+-- ([]). Sprite's parse_attrs refuses an array, which would kill the session on
+-- the first frame (Neovim sends such a highlight on startup).
+do
+  local s = Redraw.new()
+  s:event({ "hl_attr_define", { 1, {}, {}, {} } })
+  s:event({ "flush" })
+  local batch = { type = "batch", ops = s:take_batch() }
+  local encoded = vim.json.encode(batch)
+  T.ok(encoded:find('"1":{}', 1, true) ~= nil, "empty attrs encode as an object")
+  T.ok(encoded:find('"1":[]', 1, true) == nil, "empty attrs never encode as an array")
+end

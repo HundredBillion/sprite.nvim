@@ -81,3 +81,27 @@ T.eq(Input.call({ type = "blur" }), { method = "nvim_ui_set_focus", args = { fal
 
 -- warning maps to no call (the adapter logs it separately).
 T.eq(Input.call({ type = "warning", message = "x" }), nil, "warning is not a Neovim call")
+
+-- GPUI reports Enter as text "\n" and Tab as "\t". Those control characters
+-- must not be sent verbatim (that types Ctrl-J/Ctrl-I and breaks <CR>/<Tab>
+-- mappings); the key path wins instead, and modifiers are kept.
+T.eq(
+  Input.call({ type = "input", key = "enter", text = "\n" }),
+  { method = "nvim_input", args = { "<CR>" } },
+  "Enter-as-text falls to <CR>"
+)
+T.eq(
+  Input.call({ type = "input", key = "tab", text = "\t" }),
+  { method = "nvim_input", args = { "<Tab>" } },
+  "Tab-as-text falls to <Tab>"
+)
+T.eq(
+  Input.call({ type = "input", key = "ctrl-enter", text = "\n" }),
+  { method = "nvim_input", args = { "<C-CR>" } },
+  "Ctrl-Enter keeps its modifier via the key path"
+)
+T.eq(
+  Input.call({ type = "input", key = "shift-1", text = "!" }),
+  { method = "nvim_input", args = { "!" } },
+  "printable text still wins"
+)
