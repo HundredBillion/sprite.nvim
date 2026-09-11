@@ -16,10 +16,45 @@ local socket_path = uv.os_getenv("SPRITE_SURFACE_SOCKET")
 local key = uv.os_getenv("SPRITE_SURFACE_KEY")
 local pane = tonumber(uv.os_getenv("SPRITE_PANE"))
 
+-- The Surface socket: newline-delimited JSON in both directions.
+local sock = uv.new_pipe(false)
+local sock_buf = ""
+local editor -- the embedded nvim's process handle
+local editor_exit -- its code, once known
+local rpc -- the RPC client to the editor
+local translator = Redraw.new()
+local attached = false
+
+-- The stdin-drain handle. Only live once the Surface path is committed (after
+-- the handshake's `opened` verdict); `fail_open` must tear it down before
+-- handing fd 0 to the real editor, so both share this upvalue.
+local drain_handle
+
+-- Referenced by on_surface_event below; assigned after declaration so the
+-- closure sees a local, never a global.
+local start_editor
+
 -- Fail open: run the real editor on the terminal's own streams, wait, and exit
--- with its code. Used for any refusal before the editor is drawing.
+-- with its code. Used for any refusal before the editor is drawing. Anything
+-- still holding fd 0 or the socket must let go first, or the real editor
+-- would race the drain reader for the same keystrokes.
 local function fail_open(reason)
   Log.write("failopen", reason)
+  if drain_handle then
+    pcall(function()
+      drain_handle:read_stop()
+    end)
+    pcall(function()
+      drain_handle:close()
+    end)
+    drain_handle = nil
+  end
+  pcall(function()
+    sock:read_stop()
+  end)
+  pcall(function()
+    sock:close()
+  end)
   local done
   local handle = uv.spawn(vim.v.progpath, {
     args = user_args,
@@ -34,19 +69,6 @@ local function fail_open(reason)
   uv.run()
   os.exit(done or 0)
 end
-
--- The Surface socket: newline-delimited JSON in both directions.
-local sock = uv.new_pipe(false)
-local sock_buf = ""
-local editor -- the embedded nvim's process handle
-local editor_exit -- its code, once known
-local rpc -- the RPC client to the editor
-local translator = Redraw.new()
-local attached = false
-
--- Referenced by on_surface_event below; assigned after declaration so the
--- closure sees a local, never a global.
-local start_editor
 
 local function sock_send(obj)
   local line = vim.json.encode(obj)
@@ -103,8 +125,11 @@ local function on_surface_event(event)
   local call = Input.call(event)
   if call and rpc then
     rpc:notify(call.method, call.args)
-  elseif event.type == "input" and event.key then
+  elseif t == "input" and event.key then
     Log.write("dropkey", event.key)
+  elseif call then
+    -- Recognized but the editor isn't attached yet; note what was ignored.
+    Log.trace("dropped", "pre-attach event: " .. tostring(t))
   end
 end
 
@@ -173,27 +198,32 @@ local function on_socket(err, data)
   end
 end
 
--- Drain our own standard input for the whole session and discard it: the
--- editor's input arrives over the socket, and anything reaching the pty by
--- another route must not be left for the shell to read after we exit. In a
+-- Drain our own standard input for the rest of the session and discard it:
+-- the editor's input arrives over the socket, and anything reaching the pty
+-- by another route must not be left for the shell to read after we exit. In a
 -- Sprite pane fd 0 is a tty; a pipe or file when run from a test or a script.
+-- Only called once the Surface path is committed (see `connect`) — never
+-- while a fail-open editor might still need fd 0 for itself.
 local function drain_stdin()
   local kind = uv.guess_handle(0)
-  local stdin
+  local handle
   if kind == "tty" then
-    stdin = uv.new_tty(0, true)
+    local ok, tty = pcall(uv.new_tty, 0, true)
+    if not ok or not tty then
+      return
+    end
+    handle = tty
   else
-    stdin = uv.new_pipe(false)
+    handle = uv.new_pipe(false)
     local ok = pcall(function()
-      stdin:open(0)
+      handle:open(0)
     end)
     if not ok then
       return
     end
   end
-  if stdin then
-    stdin:read_start(function() end)
-  end
+  drain_handle = handle
+  drain_handle:read_start(function() end)
 end
 
 -- Connect, handshake, then read the first reply (opened or a refusal).
@@ -240,6 +270,9 @@ local function connect()
         return
       end
       Log.write("handshake", "opened surface " .. tostring(verdict.surface))
+      -- The Surface path is now committed: only from here on does anything
+      -- else own fd 0.
+      drain_stdin()
       -- Hand the rest of the stream to the steady reader.
       sock:read_stop()
       sock_buf = rest
@@ -250,7 +283,6 @@ local function connect()
   end)
 end
 
-drain_stdin()
 connect()
 uv.run()
 os.exit(editor_exit or 0)
