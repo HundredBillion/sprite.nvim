@@ -8,7 +8,26 @@ local function adapter_env(sock)
     "SPRITE_PANE=1",
     "PATH=" .. uv.os_getenv("PATH"),
     "HOME=" .. (uv.os_getenv("HOME") or "/tmp"),
+    -- DIAGNOSTIC (Problem B): trace every socket line in both directions and
+    -- send the adapter's log to a per-check state dir we can print afterwards.
+    "SPRITE_NVIM_TRACE=1",
+    "XDG_STATE_HOME=" .. sock .. ".state",
   }
+end
+
+-- DIAGNOSTIC (Problem B): dump the child adapter's trace log to stdout, which
+-- CI captures, turning an opaque timeout into a visible handshake/spawn trace.
+local function dump_adapter_log(sock, label)
+  local path = sock .. ".state/sprite-nvim/adapter.log"
+  print("---- adapter trace [" .. label .. "] " .. path .. " ----")
+  local f = io.open(path, "r")
+  if f then
+    io.write(f:read("*a") or "")
+    f:close()
+  else
+    print("(no adapter log file)")
+  end
+  print("---- end adapter trace [" .. label .. "] ----")
 end
 
 -- Rebuilds the little slice of screen a set of collected batch lines describe,
@@ -106,6 +125,7 @@ do
     end
   end
   T.ok(saw_tilde, "the empty buffer's tildes reach Sprite as rows")
+  dump_adapter_log(sock, "tilde")
 end
 
 -- Inbound round-trip: an "input" event sent through the fake Sprite after
@@ -164,6 +184,7 @@ do
     end
   end
   T.ok(saw_abc, "input typed through the fake Sprite reaches Neovim and returns in a rows batch")
+  dump_adapter_log(sock, "input-roundtrip")
 end
 
 -- Socket-drop exit 129: once the session is live (attached and drawing),
@@ -207,6 +228,7 @@ do
     child:kill("sigterm")
   end
   T.eq(code, 129, "losing Sprite mid-session kills the editor and exits 129")
+  dump_adapter_log(sock, "socket-drop")
 end
 
 -- A refused open runs the real editor and the adapter exits with its code.

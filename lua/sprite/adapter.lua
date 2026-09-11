@@ -21,6 +21,11 @@ local sock = uv.new_pipe(false)
 local sock_buf = ""
 local editor -- the embedded nvim's process handle
 local editor_exit -- its code, once known
+-- Set when Sprite goes away: the session ends as a hangup (129) regardless of
+-- the code the editor reports as it is killed. A distinct flag, not editor_exit,
+-- so the editor's own on_exit (which fires after we kill it) cannot overwrite
+-- the 129 the top-level exit must return.
+local hangup = false
 local rpc -- the RPC client to the editor
 local translator = Redraw.new()
 local attached = false
@@ -71,7 +76,11 @@ local function fail_open(reason)
     uv.stop()
   end)
   if not handle then
-    os.exit(1)
+    -- Nothing left to run; end the loop and let the top-level exit report the
+    -- failure. os.exit here would be inside a libuv callback, which nightly
+    -- Neovim forbids in a fast event context.
+    editor_exit = 1
+    uv.stop()
   end
 end
 
@@ -107,8 +116,11 @@ local function sprite_gone(reason)
   if editor then
     editor:kill("sigterm")
   end
+  -- Record the hangup and stop the loop; the single top-level os.exit reports
+  -- 129. Calling os.exit from inside this libuv callback is forbidden on
+  -- nightly Neovim ("os.exit must not be called in a fast event context").
+  hangup = true
   uv.stop()
-  os.exit(129)
 end
 
 -- A decoded Surface event.
@@ -290,4 +302,6 @@ end
 
 connect()
 uv.run()
-os.exit(editor_exit or 0)
+-- Runs after uv.run() returns, so it is not in a fast event context. A hangup
+-- (Sprite went away) always reports 129; otherwise the editor's own code.
+os.exit(hangup and 129 or editor_exit or 0)
