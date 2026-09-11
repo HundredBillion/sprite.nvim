@@ -876,7 +876,7 @@ git commit -m "Speak msgpack-RPC to an embedded Neovim over a pipe"
   - `Log.tracing() -> boolean` — true when `SPRITE_NVIM_TRACE=1`.
   - `Log.open()` / `Log.write(kind, message)` / `Log.trace(direction, text)` — append to the file (creating the directory); `trace` is a no-op unless tracing. These do file I/O and are exercised by the integration test, not unit-tested for content.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `tests/log_spec.lua`:
 
@@ -899,12 +899,12 @@ T.eq(Log.tracing({ SPRITE_NVIM_TRACE = "1" }), true, "trace on")
 T.eq(Log.tracing({}), false, "trace off by default")
 ```
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run: `nvim -l tests/run.lua`
 Expected: FAIL — `lua/sprite/log.lua` does not exist.
 
-- [ ] **Step 3: Write the log**
+- [x] **Step 3: Write the log**
 
 Create `lua/sprite/log.lua`:
 
@@ -962,12 +962,12 @@ end
 return Log
 ```
 
-- [ ] **Step 4: Run to verify it passes**
+- [x] **Step 4: Run to verify it passes**
 
 Run: `nvim -l tests/run.lua`
 Expected: PASS.
 
-- [ ] **Step 5: Format and commit**
+- [x] **Step 5: Format and commit**
 
 ```bash
 stylua --check lua/sprite/log.lua tests/log_spec.lua
