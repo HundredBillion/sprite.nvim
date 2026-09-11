@@ -20,6 +20,7 @@ T.eq(Input.key("alt-x"), "<M-x>", "alt is M")
 T.eq(Input.key("cmd-s"), "<D-s>", "cmd is D")
 T.eq(Input.key("ctrl-enter"), "<C-CR>", "modifier plus named key")
 T.eq(Input.key("<"), "<lt>", "a bare less-than is escaped")
+T.eq(Input.key("é"), "é", "a single multibyte key types itself")
 
 -- input with text uses the text; < becomes <lt>; key is ignored.
 T.eq(

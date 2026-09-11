@@ -60,7 +60,7 @@ function Input.key(name)
   if not base then
     return nil
   end
-  if #mods == 0 and #base == 1 and base ~= "lt" then
+  if #mods == 0 and vim.fn.strchars(base) == 1 and base ~= "lt" then
     -- A bare printable key needs no brackets, but < did (handled as lt above).
     return base
   end
