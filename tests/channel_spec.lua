@@ -37,12 +37,15 @@ do
       focus = true,
       description = vim.empty_dict(),
     },
-    timeout_ms = 30,
+    timeout_ms = 2000,
   }, function(err, ch)
     T.eq(err, nil, "delayed fake accepts open")
     if not ch then
       return
     end
+    -- Only the requests under test need a short deadline. The handshake may
+    -- take longer on a busy CI runner before the fake can accept the socket.
+    ch.timeout_ms = 30
     ch:request({ type = "assets", entries = vim.empty_dict() }, "applied", function(e)
       results[#results + 1] = e and e.code or "ok"
     end)
@@ -193,7 +196,7 @@ local function scenario(reply, expected, opts)
     path = path,
     key = "secret",
     first = opts.first or { type = "open" },
-    timeout_ms = opts.timeout_ms or 100,
+    timeout_ms = opts.timeout_ms or 2000,
   }
   local function on_ready(err, ch)
     observed = err and err.code or (ch and "ready")
@@ -310,13 +313,17 @@ for _, mode in ipairs({ "timeout", "closed" }) do
     path = path,
     key = "secret",
     first = { type = "open" },
-    timeout_ms = 30,
+    timeout_ms = 2000,
     on_close = function()
       closes = closes + 1
       T.eq(vim.in_fast_event(), false, mode .. " close scheduled")
     end,
   }, function(err, ch)
     T.eq(err, nil, mode .. " channel ready")
+    if not ch then
+      return
+    end
+    ch.timeout_ms = 30
     channel = ch
     ch:request({ type = "assets", operation = "assets" }, "applied", function(request_err)
       calls = calls + 1

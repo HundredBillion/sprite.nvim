@@ -57,7 +57,10 @@ In the dock, `j` changes the selected row, `e` returns focus to the editor,
 and `q` closes the dock. After a terminal editor resumes from suspension,
 run `:SpriteDemo` to open it again.
 
-The standalone test suite runs with `nvim -l tests/run.lua`. To check this
+The standalone test suite runs with `nvim -l tests/run.lua`. Run
+`SPRITE_BENCHMARK=1 nvim -l tests/run.lua` on a quiet machine to also enforce
+the 10 ms repaint performance budget after warmup. CI checks repaint contents
+without a wall-clock limit because shared runner scheduling varies. To check this
 plugin against Sprite's committed protocol fixture from a local Sprite
 checkout, run `SPRITE_SOURCE=/path/to/Sprite sh scripts/test-protocol.sh`.
 The protocol integration command requires `SPRITE_SOURCE` and exits with an

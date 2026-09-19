@@ -397,7 +397,8 @@ do
   )
 end
 
--- Speed gate: a 200x60 full repaint translates to one batch within 10 ms.
+-- Always check a full repaint's contents. Opt in to the wall-clock budget on
+-- a quiet machine; shared CI runners cannot guarantee a 10 ms time slice.
 do
   local Redraw = dofile(root .. "/lua/sprite/redraw.lua")
   local s = Redraw.new()
@@ -407,17 +408,34 @@ do
   for i = 1, 200 do
     cells[i] = { string.char(97 + (i % 26)), 1 }
   end
-  local t0 = uv.hrtime()
-  local line
-  for _ = 1, 3 do
+  local function repaint()
     s = Redraw.new()
     for row = 0, 59 do
       s:event({ "grid_line", { 1, row, 0, cells, false } })
     end
     s:event({ "flush" })
-    line = vim.json.encode({ type = "batch", ops = s:take_batch() })
+    return vim.json.encode({ type = "batch", ops = s:take_batch() })
   end
-  local ms = (uv.hrtime() - t0) / 1e6 / 3
-  T.ok(#line > 0, "the repaint produced a batch line")
-  T.ok(ms < 10, string.format("200x60 repaint batches in under 10 ms (was %.2f ms)", ms))
+  local batch = vim.json.decode(repaint())
+  T.eq(batch.type, "batch", "the repaint produced a batch")
+  T.eq(#batch.ops, 60, "the repaint includes every row")
+  for row = 0, 59 do
+    T.eq(batch.ops[row + 1], {
+      type = "rows",
+      rows = { { row = row, col = 0, cells = cells } },
+    }, "the repaint preserves row " .. row)
+  end
+  T.eq(s:take_batch(), nil, "the repaint drains in one batch")
+  if vim.env.SPRITE_BENCHMARK == "1" then
+    for _ = 1, 10 do
+      repaint()
+    end
+    local t0 = uv.hrtime()
+    for _ = 1, 30 do
+      repaint()
+    end
+    local ms = (uv.hrtime() - t0) / 1e6 / 30
+    print(string.format("200x60 repaint: %.2f ms per batch", ms))
+    T.ok(ms < 10, string.format("200x60 repaint batches in under 10 ms (was %.2f ms)", ms))
+  end
 end
