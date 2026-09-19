@@ -95,27 +95,37 @@ function M.available(done)
   local deadline = uv.now() + 2000
   local cancel_wait, cancel_exchange
   local cancelled = false
+  local function cancel()
+    if cancelled then
+      return
+    end
+    cancelled = true
+    pending[cancel] = nil
+    if cancel_wait then
+      cancel_wait()
+    end
+    if cancel_exchange then
+      cancel_exchange()
+    end
+  end
+  pending[cancel] = cancel
   cancel_wait = Session.await_ui(deadline, function(e, context)
     if cancelled then
       return
     end
     if e then
+      pending[cancel] = nil
       callback(done, e)
       return
     end
     cancel_exchange = capabilities(context, deadline, function(discovery_err, result)
       if not cancelled then
+        pending[cancel] = nil
         callback(done, discovery_err, result)
       end
     end)
   end)
-  return function()
-    cancelled = true
-    cancel_wait()
-    if cancel_exchange then
-      cancel_exchange()
-    end
-  end
+  return cancel
 end
 
 function M.register_tokens(tokens, done)
@@ -236,6 +246,10 @@ function Handle:state(revision, patch, done)
   end
   if type(patch) ~= "table" then
     callback(done, err("protocol", "state must be an object"))
+    return
+  end
+  if patch.type ~= nil or patch.revision ~= nil then
+    callback(done, err("protocol", "state patch cannot replace request fields"))
     return
   end
   local message = vim.tbl_extend("force", { type = "list_state", revision = revision }, patch or {})
@@ -421,7 +435,11 @@ vim.api.nvim_create_autocmd("VimLeavePre", {
       return
     end
     exiting = true
+    local cancellations = {}
     for _, cancel in pairs(pending) do
+      cancellations[#cancellations + 1] = cancel
+    end
+    for _, cancel in ipairs(cancellations) do
       cancel()
     end
     for cancel in pairs(active) do

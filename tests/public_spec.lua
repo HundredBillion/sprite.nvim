@@ -303,6 +303,12 @@ describe("queued state patches", function()
   with_context(function()
     sprite.open({ side = "left", width = 280, description = fixture.description }, function(e, h)
       T.eq(e, nil, "coalesce open")
+      h:state(1, { type = "update" }, function(state_err)
+        T.eq(state_err and state_err.code, "protocol", "state cannot replace operation")
+      end)
+      h:state(1, { revision = 2 }, function(state_err)
+        T.eq(state_err and state_err.code, "protocol", "state cannot replace revision")
+      end)
       h:assets({}, function(asset_err)
         T.eq(asset_err, nil, "blocking asset acknowledgement")
       end)
@@ -423,4 +429,37 @@ describe("unexpected owned socket EOF", function()
   T.eq(reasons[1].error.code, "unavailable", "unexpected EOF code")
   stop()
   Session.await_ui = original_await
+end)
+
+describe("sequential token registration", function()
+  local token_names = {}
+  local requests, stop = server(function(message)
+    T.eq(message.type, "token", "token exchange only")
+    token_names[#token_names + 1] = message.name
+    if message.name == "first" then
+      return { type = "registered" }
+    end
+    return { type = "refused", reason = "token default conflict" }
+  end)
+  local original_current = Session.current
+  Session.current = function()
+    return context
+  end
+  local result
+  sprite.register_tokens({
+    { name = "first", default = "#112233", description = "First" },
+    { name = "second", default = "#445566", description = "Second" },
+    { name = "third", default = "#778899", description = "Third" },
+  }, function(problem)
+    result = problem
+  end)
+  wait_for(function()
+    return result ~= nil
+  end)
+  T.eq(result.code, "refused", "conflict code returned")
+  T.eq(result.message, "token default conflict", "conflict reason retained")
+  T.eq(token_names, { "first", "second" }, "register stops on conflict")
+  T.eq(#requests, 2, "each token uses one connection")
+  Session.current = original_current
+  stop()
 end)
