@@ -1,6 +1,7 @@
 -- Runs every tests/*_spec.lua under `nvim -l`. A spec calls `describe`/`it`
 -- from the tiny harness below; a failed assert prints and flips the exit.
 local root = vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":h")
+vim.opt.runtimepath:prepend(vim.fn.fnamemodify(root, ":h"))
 local failures = 0
 local total = 0
 

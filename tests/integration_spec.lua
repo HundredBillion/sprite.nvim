@@ -9,7 +9,8 @@ local function adapter_env(sock)
     "SPRITE_SURFACE_SOCKET=" .. sock,
     "SPRITE_SURFACE_KEY=testkey",
     "SPRITE_PANE=1",
-    "PATH=" .. (uv.os_getenv("PATH") or ""),
+    "PATH=" .. vim.fn.fnamemodify(vim.v.progpath, ":h") .. ":" .. (uv.os_getenv("PATH") or ""),
+    "VIMRUNTIME=" .. vim.env.VIMRUNTIME,
     "HOME=" .. (uv.os_getenv("HOME") or "/tmp"),
     "XDG_STATE_HOME=" .. sock .. ".state",
   }
@@ -231,7 +232,7 @@ do
   local server = Fake.serve(sock, { refuse = true })
   local code
   local child = uv.spawn(vim.v.progpath, {
-    args = { "-l", root .. "/lua/sprite/adapter.lua", "--headless", "-c", "cquit 5" },
+    args = { "-l", root .. "/lua/sprite/adapter.lua", "--clean", "--headless", "-c", "cquit 5" },
     env = adapter_env(sock),
     stdio = { nil, nil, 2 },
   }, function(c)
@@ -275,7 +276,7 @@ do
   local child_stdin = uv.new_pipe(false)
   local code
   local child = uv.spawn(vim.v.progpath, {
-    args = { "-l", root .. "/lua/sprite/adapter.lua", "--headless", "-c", "cquit 5" },
+    args = { "-l", root .. "/lua/sprite/adapter.lua", "--clean", "--headless", "-c", "cquit 5" },
     env = adapter_env(sock),
     stdio = { child_stdin, nil, 2 },
   }, function(c)
