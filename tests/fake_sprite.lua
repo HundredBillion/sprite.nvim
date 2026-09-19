@@ -238,7 +238,7 @@ function M.validate(message, state)
     if state.revision and message.revision <= state.revision then
       return nil, "rows revision must increase"
     end
-    local ids = {}
+    local ids, groups = {}, {}
     for _, row in ipairs(message.rows) do
       if
         not object(row)
@@ -253,7 +253,12 @@ function M.validate(message, state)
         return nil, "invalid list row"
       end
       for _, guide in ipairs(row.guides) do
-        if not bounded(guide, 0, 16384) then
+        if object(guide) then
+          if not bounded(guide.offset, 0, 16384) or not label(guide.id) then
+            return nil, "invalid guide"
+          end
+          groups[guide.id] = true
+        elseif not bounded(guide, 0, 16384) then
           return nil, "invalid guide"
         end
       end
@@ -265,7 +270,7 @@ function M.validate(message, state)
     if message.selected ~= vim.NIL and not ids[message.selected] then
       return nil, "selected row missing"
     end
-    state.revision, state.ids = message.revision, ids
+    state.revision, state.ids, state.groups = message.revision, ids, groups
   elseif message.type == "list_state" then
     if
       message.revision ~= state.revision
@@ -279,6 +284,18 @@ function M.validate(message, state)
     end
     if message.status ~= nil and message.status ~= vim.NIL and type(message.status) ~= "string" then
       return nil, "invalid status"
+    end
+    if message.active_guides ~= nil and message.active_guides ~= vim.NIL then
+      if not vim.islist(message.active_guides) or #message.active_guides > 64 then
+        return nil, "invalid active guides"
+      end
+      local seen = {}
+      for _, id in ipairs(message.active_guides) do
+        if not label(id) or seen[id] or not state.groups[id] then
+          return nil, "invalid active guide"
+        end
+        seen[id] = true
+      end
     end
     for _, key in ipairs({ "selected", "reveal" }) do
       if message[key] ~= nil and message[key] ~= vim.NIL and not state.ids[message[key]] then
