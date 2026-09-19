@@ -415,6 +415,45 @@ describe("resume subscriptions", function()
   T.eq(called, 1, "removed subscription stays removed")
 end)
 
+describe("events after deliberate close", function()
+  local received = {}
+  local owned_handle
+  local dock_client
+  local _, stop = server(function(message, client)
+    if message.type == "capabilities" then
+      return fixture.capabilities.reply
+    end
+    if message.type == "open" then
+      dock_client = client
+      return { type = "opened", surface = 41 }
+    end
+  end)
+  with_context(function()
+    sprite.open({
+      side = "left",
+      width = 280,
+      description = fixture.description,
+      on_event = function(event)
+        received[#received + 1] = event.key
+        if event.key == "q" then
+          owned_handle:close()
+        end
+      end,
+    }, function(problem, handle)
+      T.eq(problem, nil, "event-close open")
+      owned_handle = handle
+      dock_client:write('{"type":"input","key":"q"}\n{"type":"input","key":"j"}\n')
+    end)
+  end)
+  wait_for(function()
+    return #received > 0
+  end)
+  vim.wait(30)
+  T.eq(received, { "q" }, "queued input after close is suppressed")
+  stop()
+  Session.await_ui = original_await
+end)
+
 describe("unexpected owned socket EOF", function()
   local reasons = {}
   local _, stop = server(function(message, client)

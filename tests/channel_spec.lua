@@ -62,6 +62,101 @@ do
   server.close()
 end
 
+do
+  local path = vim.fn.tempname() .. ".sock"
+  local server = uv.new_pipe(false)
+  assert(server:bind(path))
+  local peer, writes, completed = nil, 0, 0
+  server:listen(1, function()
+    peer = uv.new_pipe(false)
+    server:accept(peer)
+    peer:read_start(function(_, bytes)
+      if not bytes then
+        return
+      end
+      for _ in bytes:gmatch("[^\n]+") do
+        writes = writes + 1
+        if writes == 1 then
+          peer:write('{"type":"opened","surface":7}\n')
+        elseif writes == 3 then
+          peer:write('{"type":"applied","operation":"list_state","revision":1}\n')
+        end
+      end
+    end)
+  end)
+  Channel.connect(
+    { path = path, key = "secret", first = { type = "open" }, timeout_ms = 5000 },
+    function(err, ch)
+      T.eq(err, nil, "high-volume channel ready")
+      ch:request({ type = "assets", entries = vim.empty_dict() }, "applied", function() end)
+      for _ = 1, 10000 do
+        ch:request(
+          { type = "list_state", revision = 1, selected = "a" },
+          "applied",
+          function(problem)
+            T.eq(problem, nil, "coalesced acknowledgement")
+            completed = completed + 1
+          end
+        )
+      end
+      T.ok(ch.queued_bytes >= 10000 * 64, "queued callback storage counts toward budget")
+      peer:write('{"type":"applied","operation":"assets"}\n')
+    end
+  )
+  T.ok(
+    vim.wait(5000, function()
+      return completed == 10000
+    end),
+    "all 10000 coalesced callbacks complete"
+  )
+  T.eq(writes, 3, "coalesced states used one wire request")
+  peer:close()
+  server:close()
+  uv.fs_unlink(path)
+end
+
+do
+  local completed = 0
+  local ch = setmetatable(
+    { closed = false, ready = false, queue = {}, queued_bytes = 0, generation = 0 },
+    { __index = Channel }
+  )
+  for _ = 1, 10000 do
+    ch:request({ type = "list_state", revision = 1, selected = "a" }, "applied", function(problem)
+      T.eq(problem.code, "closed", "coalesced cancellation reason")
+      completed = completed + 1
+    end)
+  end
+  ch:close("cancelled")
+  T.ok(
+    vim.wait(5000, function()
+      return completed == 10000
+    end),
+    "all 10000 coalesced cancellations complete"
+  )
+end
+
+do
+  local code
+  local ch = setmetatable({
+    closed = false,
+    ready = false,
+    queue = {},
+    queued_bytes = 16 * 1024 * 1024 - 100,
+    generation = 0,
+  }, { __index = Channel })
+  ch:request({ type = "list_state", revision = 1, selected = "a" }, "applied", function(problem)
+    code = problem and problem.code
+  end)
+  T.ok(
+    vim.wait(1000, function()
+      return code ~= nil
+    end),
+    "queue budget callback arrives"
+  )
+  T.eq(code, "queue_full", "callback retention counts toward queue budget")
+end
+
 local function scenario(reply, expected, opts)
   opts = opts or {}
   local path = "/tmp/sprite-channel-" .. uv.os_getpid() .. "-" .. tostring(uv.hrtime()) .. ".sock"

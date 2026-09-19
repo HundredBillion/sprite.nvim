@@ -1,6 +1,7 @@
 local uv = vim.uv
 local unpack = table.unpack or unpack
 local LIMIT = 16 * 1024 * 1024
+local CALLBACK_BYTES = 64
 local Channel = {}
 
 local function error_value(code, message)
@@ -32,6 +33,12 @@ local function teardown(callback, ...)
   vim.schedule(function()
     safe_call(callback, unpack(args, 1, args.n))
   end)
+end
+
+local function complete(item, ...)
+  for _, callback in ipairs(item.callbacks) do
+    teardown(callback, ...)
+  end
 end
 
 function Channel.decoder(on_value, max_bytes)
@@ -105,10 +112,10 @@ local function close(self, reason)
     teardown(self.callback, err)
   end
   if self.pending then
-    teardown(self.pending.callback, err)
+    complete(self.pending, err)
   end
   for _, item in ipairs(self.queue) do
-    teardown(item.callback, err)
+    complete(item, err)
   end
   self.pending = nil
   self.queue = {}
@@ -141,7 +148,7 @@ local function pump(self)
     return
   end
   local item = table.remove(self.queue, 1)
-  self.queued_bytes = self.queued_bytes - #item.line
+  self.queued_bytes = self.queued_bytes - #item.line - #item.callbacks * CALLBACK_BYTES
   self.pending = item
   deadline(self, self.timeout_ms, "timeout")
   self.pipe:write(item.line, function(err)
@@ -201,13 +208,13 @@ local function receive(self, message)
     local item = self.pending
     self.pending = nil
     stop_timer(self)
-    teardown(item.callback, error_value("refused", message.reason or message.message))
+    complete(item, error_value("refused", message.reason or message.message))
     pump(self)
   elseif self.pending and matches(message, self.pending) then
     local item = self.pending
     self.pending = nil
     stop_timer(self)
-    teardown(item.callback, nil, message)
+    complete(item, nil, message)
     pump(self)
   elseif
     message.type == "applied"
@@ -306,16 +313,15 @@ function Channel:request(message, expected_type, callback)
           patch.scroll = message.scroll
         end
         local merged, merge_err = encoded(self, patch)
-        if not merged or self.queued_bytes - #item.line + #merged > LIMIT then
+        local callback_bytes = callback and CALLBACK_BYTES or 0
+        if not merged or self.queued_bytes - #item.line + #merged + callback_bytes > LIMIT then
           teardown(callback, merge_err or error_value("queue_full", "request queue full"))
           return
         end
-        self.queued_bytes = self.queued_bytes - #item.line + #merged
+        self.queued_bytes = self.queued_bytes - #item.line + #merged + callback_bytes
         item.line, item.message = merged, patch
-        local previous = item.callback
-        item.callback = function(err, reply)
-          safe_call(previous, err, reply)
-          safe_call(callback, err, reply)
+        if callback then
+          item.callbacks[#item.callbacks + 1] = callback
         end
         return
       end
@@ -326,13 +332,18 @@ function Channel:request(message, expected_type, callback)
     teardown(callback, err)
     return
   end
-  if self.queued_bytes + #line > LIMIT then
+  local callback_bytes = callback and CALLBACK_BYTES or 0
+  if self.queued_bytes + #line + callback_bytes > LIMIT then
     teardown(callback, error_value("queue_full", "request queue full"))
     return
   end
-  self.queue[#self.queue + 1] =
-    { message = message, expected = expected_type, callback = callback, line = line }
-  self.queued_bytes = self.queued_bytes + #line
+  self.queue[#self.queue + 1] = {
+    message = message,
+    expected = expected_type,
+    callbacks = callback and { callback } or {},
+    line = line,
+  }
+  self.queued_bytes = self.queued_bytes + #line + callback_bytes
   pump(self)
 end
 

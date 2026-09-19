@@ -92,6 +92,10 @@ local function capabilities(context, deadline, done)
 end
 
 function M.available(done)
+  if exiting then
+    callback(done, err("closed"))
+    return function() end
+  end
   local deadline = uv.now() + 2000
   local cancel_wait, cancel_exchange
   local cancelled = false
@@ -129,6 +133,10 @@ function M.available(done)
 end
 
 function M.register_tokens(tokens, done)
+  if exiting then
+    callback(done, err("closed"))
+    return
+  end
   if type(tokens) ~= "table" or not vim.islist(tokens) then
     callback(done, err("protocol", "tokens must be an array"))
     return
@@ -139,11 +147,31 @@ function M.register_tokens(tokens, done)
     return
   end
   local index = 0
+  local completed = false
+  local cancel_exchange
+  local function finish(problem)
+    if completed then
+      return
+    end
+    completed = true
+    pending[finish] = nil
+    callback(done, problem)
+  end
+  pending[finish] = function()
+    if cancel_exchange then
+      cancel_exchange()
+    end
+    finish(err("closed"))
+  end
   local function next_token()
+    if completed or exiting then
+      finish(err("closed"))
+      return
+    end
     index = index + 1
     local token = tokens[index]
     if not token then
-      callback(done, nil)
+      finish(nil)
       return
     end
     if
@@ -152,10 +180,10 @@ function M.register_tokens(tokens, done)
       or type(token.default) ~= "string"
       or type(token.description) ~= "string"
     then
-      callback(done, err("protocol", "invalid token"))
+      finish(err("protocol", "invalid token"))
       return
     end
-    exchange(
+    cancel_exchange = exchange(
       context,
       {
         type = "token",
@@ -168,8 +196,12 @@ function M.register_tokens(tokens, done)
         if ch then
           ch:close()
         end
+        if completed or exiting then
+          finish(err("closed"))
+          return
+        end
         if e then
-          callback(done, e)
+          finish(e)
         else
           next_token()
         end
@@ -287,6 +319,10 @@ function Handle:close()
 end
 
 function M.open(opts, done)
+  if exiting then
+    callback(done, err("closed"))
+    return
+  end
   if
     type(opts) ~= "table"
     or (opts.side ~= "left" and opts.side ~= "right")
@@ -393,7 +429,13 @@ function M.open(opts, done)
           if event.type == "list_scroll" and event.revision ~= owned[handle].revision then
             return
           end
-          callback(handle.on_event, event)
+          -- Channel already schedules delivery; another schedule could deliver after close.
+          if handle.on_event then
+            local ok, failure = pcall(handle.on_event, event)
+            if not ok then
+              vim.notify("sprite callback: " .. tostring(failure), vim.log.levels.ERROR)
+            end
+          end
         end
       )
     end)
@@ -402,6 +444,9 @@ end
 
 function M.on_resume(fn)
   assert(type(fn) == "function", "resume callback must be a function")
+  if exiting then
+    return function() end
+  end
   local subscription = {}
   resumes[subscription] = fn
   return function()
