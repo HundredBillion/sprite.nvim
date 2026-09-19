@@ -220,6 +220,56 @@ do
   T.ok(saw_abc, "input typed through the fake Sprite reaches Neovim and returns in a rows batch")
 end
 
+-- Named Enter and Escape cross the adapter's raw socket callback. The insert
+-- mapping proves Enter remains <CR>; the final edit proves Escape left insert.
+do
+  local sock = "/tmp/sprite-nvim-test-" .. uv.getpid() .. "-named.sock"
+  local Fake = dofile(root .. "/tests/fake_sprite.lua")
+  local sent = false
+  local server
+  server = Fake.serve(sock, {
+    on_line = function()
+      if sent then
+        return
+      end
+      sent = true
+      server.send({ type = "input", text = "iA" })
+      server.send({ type = "input", key = "enter", text = "\n" })
+      server.send({ type = "input", key = "escape" })
+      server.send({ type = "input", text = "aZ" })
+    end,
+  })
+  local child = uv.spawn(vim.v.progpath, {
+    args = { "-l", root .. "/lua/sprite/adapter.lua", "--clean", "-c", "inoremap <CR> ENTER" },
+    env = adapter_env(sock),
+    stdio = { nil, nil, 2 },
+  }, function() end)
+  local saw_edit = false
+  local deadline = uv.now() + 10000
+  local timer = uv.new_timer()
+  timer:start(20, 20, function()
+    local rows = build_rows(server.lines)
+    for row in pairs(rows) do
+      if row_text(rows, row):find("AENTERZ", 1, true) then
+        saw_edit = true
+      end
+    end
+    if saw_edit or uv.now() > deadline then
+      timer:stop()
+      uv.stop()
+    end
+  end)
+  while timer:is_active() and uv.loop_alive() do
+    uv.run()
+  end
+  if child then
+    child:kill("sigterm")
+  end
+  T.eq(server.invalid, nil, "named-key adapter batches satisfy Sprite protocol")
+  T.ok(saw_edit, "raw socket Enter mapping and Escape mode transition reach embedded editor")
+  server.close()
+end
+
 -- Socket-drop exit 129: once the session is live (attached and drawing),
 -- losing Sprite must kill the editor and exit 129 -- the same thing a hung-up
 -- terminal does today.
