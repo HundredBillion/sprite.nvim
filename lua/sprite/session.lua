@@ -79,7 +79,7 @@ function Session.bootstrap(repo, surface)
   return "lua vim.opt.runtimepath:prepend("
     .. vim.json.encode(repo)
     .. "); vim.g.sprite_session = {pid=vim.fn.getpid(),surface="
-    .. tostring(id)
+    .. string.format("%.0f", id)
     .. "}"
 end
 
@@ -107,6 +107,10 @@ function Session.await_ui(deadline, callback)
     end)
   end
   local function check()
+    if uv.now() >= deadline then
+      finish({ code = "unavailable", message = "UI unavailable" })
+      return
+    end
     local context, err = Session.current()
     if context then
       finish(nil, context)

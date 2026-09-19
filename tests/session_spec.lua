@@ -54,6 +54,65 @@ T.ok(command:find("pid=vim.fn.getpid(),surface=77", 1, true) ~= nil, "bootstrap 
 T.eq(Session.bootstrap("/tmp/a", 0), nil, "invalid surface refused")
 
 do
+  local largest = 9007199254740991
+  local bootstrap = Session.bootstrap("/tmp/a", largest)
+  local previous = vim.g.sprite_session
+  assert(loadstring(bootstrap:sub(5)))()
+  T.eq(vim.g.sprite_session.surface, largest, "bootstrap preserves largest safe Surface id")
+  vim.g.sprite_session = previous
+end
+
+do
+  local original = Session.current
+  Session.current = function()
+    return { presentation = "grid" }
+  end
+  local result
+  Session.await_ui(vim.uv.now() - 1, function(err, context)
+    result = { err = err, context = context }
+  end)
+  vim.wait(1000, function()
+    return result ~= nil
+  end, 10)
+  T.eq(
+    result and result.err and result.err.code,
+    "unavailable",
+    "already attached UI cannot pass expired deadline"
+  )
+  T.eq(result and result.context, nil, "expired deadline provides no context")
+  Session.current = original
+end
+
+do
+  local original = Session.current
+  local attached = false
+  Session.current = function()
+    if attached then
+      return { presentation = "terminal" }
+    end
+    return nil, { code = "unavailable", message = "UI unavailable" }
+  end
+  local result
+  Session.await_ui(vim.uv.now() + 20, function(err, context)
+    result = { err = err, context = context }
+  end)
+  vim.uv.sleep(25)
+  vim.uv.update_time()
+  attached = true
+  vim.api.nvim_exec_autocmds("UIEnter", {})
+  vim.wait(1000, function()
+    return result ~= nil
+  end, 10)
+  T.eq(
+    result and result.err and result.err.code,
+    "unavailable",
+    "UIEnter after deadline is unavailable"
+  )
+  T.eq(result and result.context, nil, "late UIEnter provides no context")
+  Session.current = original
+end
+
+do
   local original = Session.current
   local attached = false
   Session.current = function()
