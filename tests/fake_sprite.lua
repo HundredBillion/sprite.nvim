@@ -44,7 +44,9 @@ end
 
 local function valid_border_side(description)
   local root = description.root
-  if not object(root) or root.kind ~= "virtual_list" then return true end
+  if not object(root) or root.kind ~= "virtual_list" then
+    return true
+  end
   local side = root.border_side
   return side == nil or side == "all" or side == "left" or side == "right" or side == "none"
 end
@@ -194,7 +196,9 @@ function M.validate(message, state)
     then
       return nil, "dock needs side, size and return target"
     end
-    if not valid_border_side(message.description) then return nil, "invalid border_side" end
+    if not valid_border_side(message.description) then
+      return nil, "invalid border_side"
+    end
     remember_row_height(state, message.description)
   elseif message.type == "batch" then
     if not vim.islist(message.ops) then
@@ -219,7 +223,9 @@ function M.validate(message, state)
     if not object(message.description) then
       return nil, "update needs description object"
     end
-    if not valid_border_side(message.description) then return nil, "invalid border_side" end
+    if not valid_border_side(message.description) then
+      return nil, "invalid border_side"
+    end
     remember_row_height(state, message.description)
   elseif message.type == "focus" then
     if not integer(message.pane) or message.target == nil then
