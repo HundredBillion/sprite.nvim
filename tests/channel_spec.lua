@@ -82,6 +82,72 @@ local function scenario(reply, expected, opts)
   uv.fs_unlink(path)
 end
 
+for _, mode in ipairs({ "malformed", "eof" }) do
+  local path = "/tmp/sprite-channel-accepted-" .. mode .. "-" .. uv.os_getpid() .. ".sock"
+  local server = uv.new_pipe(false)
+  assert(server:bind(path))
+  local peer, writes = nil, 0
+  server:listen(1, function()
+    peer = uv.new_pipe(false)
+    server:accept(peer)
+    peer:read_start(function(_, bytes)
+      if not bytes then
+        return
+      end
+      for _ in bytes:gmatch("[^\n]+") do
+        writes = writes + 1
+        if writes == 1 then
+          peer:write('{"type":"opened","surface":7}\n')
+        end
+        if writes == 2 then
+          if mode == "malformed" then
+            peer:write('{"type":"applied","operation":"assets"}\n{bad}\n')
+          else
+            peer:write('{"type":"applied","operation":"assets"}\n', function()
+              peer:shutdown(function()
+                peer:close()
+              end)
+            end)
+          end
+        end
+      end
+    end)
+  end)
+  local acknowledgements, closes = {}, 0
+  Channel.connect({
+    path = path,
+    key = "secret",
+    first = { type = "open" },
+    on_close = function()
+      closes = closes + 1
+    end,
+  }, function(err, ch)
+    T.eq(err, nil, "accepted reply channel ready")
+    ch:request({ type = "assets", operation = "assets" }, "applied", function(request_err, reply)
+      acknowledgements[#acknowledgements + 1] = request_err and request_err.code or reply.type
+      T.eq(vim.in_fast_event(), false, "accepted reply scheduled")
+    end)
+  end)
+  T.ok(
+    vim.wait(1000, function()
+      return closes == 1
+    end),
+    mode .. " after reply closes channel"
+  )
+  T.ok(
+    vim.wait(1000, function()
+      return #acknowledgements == 1
+    end),
+    mode .. " accepted reply completes after close"
+  )
+  T.eq(acknowledgements, { "applied" }, mode .. " accepted reply retained through close")
+  if peer and not peer:is_closing() then
+    peer:close()
+  end
+  server:close()
+  uv.fs_unlink(path)
+end
+
 for _, mode in ipairs({ "timeout", "closed" }) do
   local path = "/tmp/sprite-channel-" .. mode .. "-" .. uv.os_getpid() .. ".sock"
   local server = uv.new_pipe(false)

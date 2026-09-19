@@ -192,13 +192,13 @@ local function receive(self, message)
     local item = self.pending
     self.pending = nil
     stop_timer(self)
-    deliver(self, item.callback, error_value("refused", message.reason or message.message))
+    teardown(item.callback, error_value("refused", message.reason or message.message))
     pump(self)
   elseif self.pending and matches(message, self.pending) then
     local item = self.pending
     self.pending = nil
     stop_timer(self)
-    deliver(self, item.callback, nil, message)
+    teardown(item.callback, nil, message)
     pump(self)
   elseif
     message.type == "applied"
