@@ -1,4 +1,6 @@
 local Fake = dofile("tests/fake_sprite.lua")
+local fixture =
+  vim.json.decode(table.concat(vim.fn.readfile("tests/fixtures/surface-list-v1.json"), "\n"))
 local state = {}
 local function accepted(message)
   local ok, reason = Fake.validate(message, state)
@@ -53,6 +55,10 @@ refused({ type = "list_state", revision = 2, selected = "a" })
 refused({ type = "list_state", revision = 1, selected = "missing" })
 refused({ type = "list_state", revision = 1, reveal = "a", scroll = { id = "a", offset = 0 } })
 accepted({ type = "list_state", revision = 1, selected = "a" })
+accepted({ type = "update", description = fixture.description })
+T.eq(state.row_height, 22, "fake tracks accepted list row height")
+refused({ type = "list_state", revision = 1, scroll = { id = "a", offset = 22 } })
+accepted({ type = "list_state", revision = 1, scroll = { id = "a", offset = 3 } })
 refused({
   type = "list_rows",
   revision = 2,

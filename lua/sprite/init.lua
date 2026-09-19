@@ -429,13 +429,15 @@ function M.open(opts, done)
           if event.type == "list_scroll" and event.revision ~= owned[handle].revision then
             return
           end
-          -- Channel already schedules delivery; another schedule could deliver after close.
-          if handle.on_event then
-            local ok, failure = pcall(handle.on_event, event)
-            if not ok then
-              vim.notify("sprite callback: " .. tostring(failure), vim.log.levels.ERROR)
+          -- Open completion is scheduled too; defer events so consumers receive the handle first.
+          vim.schedule(function()
+            if not handle.closed and handle.on_event then
+              local ok, failure = pcall(handle.on_event, event)
+              if not ok then
+                vim.notify("sprite callback: " .. tostring(failure), vim.log.levels.ERROR)
+              end
             end
-          end
+          end)
         end
       )
     end)

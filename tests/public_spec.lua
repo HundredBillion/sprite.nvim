@@ -418,14 +418,12 @@ end)
 describe("events after deliberate close", function()
   local received = {}
   local owned_handle
-  local dock_client
-  local _, stop = server(function(message, client)
+  local _, stop = server(function(message)
     if message.type == "capabilities" then
       return fixture.capabilities.reply
     end
     if message.type == "open" then
-      dock_client = client
-      return { type = "opened", surface = 41 }
+      return '{"type":"opened","surface":41}\n{"type":"resize","width":280,"height":500}\n{"type":"input","key":"q"}\n{"type":"input","key":"j"}'
     end
   end)
   with_context(function()
@@ -434,7 +432,7 @@ describe("events after deliberate close", function()
       width = 280,
       description = fixture.description,
       on_event = function(event)
-        received[#received + 1] = event.key
+        received[#received + 1] = event.key or event.type
         if event.key == "q" then
           owned_handle:close()
         end
@@ -442,14 +440,51 @@ describe("events after deliberate close", function()
     }, function(problem, handle)
       T.eq(problem, nil, "event-close open")
       owned_handle = handle
-      dock_client:write('{"type":"input","key":"q"}\n{"type":"input","key":"j"}\n')
+      received[#received + 1] = "open"
     end)
   end)
   wait_for(function()
     return #received > 0
   end)
   vim.wait(30)
-  T.eq(received, { "q" }, "queued input after close is suppressed")
+  T.eq(
+    received,
+    { "open", "resize", "q" },
+    "open precedes events and input after close is suppressed"
+  )
+  stop()
+  Session.await_ui = original_await
+end)
+
+describe("events after immediate open close", function()
+  local events, opened = 0, false
+  local _, stop = server(function(message)
+    if message.type == "capabilities" then
+      return fixture.capabilities.reply
+    end
+    if message.type == "open" then
+      return '{"type":"opened","surface":42}\n{"type":"resize","width":280,"height":500}\n{"type":"input","key":"j"}'
+    end
+  end)
+  with_context(function()
+    sprite.open({
+      side = "right",
+      width = 280,
+      description = fixture.description,
+      on_event = function()
+        events = events + 1
+      end,
+    }, function(problem, handle)
+      T.eq(problem, nil, "immediate-close open")
+      handle:close()
+      opened = true
+    end)
+  end)
+  wait_for(function()
+    return opened
+  end)
+  vim.wait(30)
+  T.eq(events, 0, "events queued with opened are suppressed after immediate close")
   stop()
   Session.await_ui = original_await
 end)

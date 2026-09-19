@@ -35,6 +35,13 @@ local function color(value)
     or type(value) == "string" and value:match("^#%x%x%x%x%x%x$") ~= nil
 end
 
+local function remember_row_height(state, description)
+  local root = description.root
+  if object(root) and root.kind == "virtual_list" and bounded(root.row_height, 12, 128) then
+    state.row_height = root.row_height
+  end
+end
+
 local function grid_op(op)
   if not object(op) then
     return nil, "grid operation needs object"
@@ -180,6 +187,7 @@ function M.validate(message, state)
     then
       return nil, "dock needs side, size and return target"
     end
+    remember_row_height(state, message.description)
   elseif message.type == "batch" then
     if not vim.islist(message.ops) then
       return nil, "batch needs ops"
@@ -203,6 +211,7 @@ function M.validate(message, state)
     if not object(message.description) then
       return nil, "update needs description object"
     end
+    remember_row_height(state, message.description)
   elseif message.type == "focus" then
     if not integer(message.pane) or message.target == nil then
       return nil, "focus needs pane and target"
@@ -277,10 +286,12 @@ function M.validate(message, state)
       end
     end
     if message.scroll ~= nil then
+      local row_height = state.row_height or 128
+      local max_offset = row_height - row_height * 1.1920928955078125e-7
       if
         not object(message.scroll)
         or not state.ids[message.scroll.id]
-        or not bounded(message.scroll.offset, 0, 16384)
+        or not bounded(message.scroll.offset, 0, max_offset)
       then
         return nil, "invalid scroll anchor"
       end
@@ -337,7 +348,7 @@ function M.serve(path, opts)
               self.first_open = decoded
             end
           end
-          local valid, reason = M.validate(self.first_open)
+          local valid, reason = M.validate(self.first_open, self)
           if not valid then
             self.invalid = reason
             self.send({ type = "refused", reason = reason })

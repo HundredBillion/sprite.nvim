@@ -14,7 +14,7 @@ assert(fixture.version == 1)
 assert(fixture.capabilities.request.type == "capabilities")
 assert(fixture.capabilities.reply.eligible == true)
 assert(fixture.description.root.kind == "virtual_list")
-local state = {}
+local state = { row_height = fixture.description.root.row_height }
 for _, operation in ipairs(fixture.operations) do
   local accepted = Fake.validate(operation.request, state)
   assert((accepted == true) == (operation.reply.type == "applied"), operation.request.type)
