@@ -7,14 +7,19 @@ local function positive_integer(value)
   return n and n > 0 and n <= MAX_SAFE_INTEGER and n == math.floor(n) and n or nil
 end
 
+local function pane_integer(value)
+  local n = tonumber(value)
+  return n and n >= 0 and n <= MAX_SAFE_INTEGER and n == math.floor(n) and n or nil
+end
+
 function Session.resolve(facts)
-  local pane = positive_integer(facts.pane)
+  local pane = pane_integer(facts.pane)
   if
     type(facts.path) ~= "string"
     or facts.path == ""
     or type(facts.key) ~= "string"
     or facts.key == ""
-    or not pane
+    or pane == nil
   then
     return nil, { code = "unavailable", message = "Surface credentials unavailable" }
   end
