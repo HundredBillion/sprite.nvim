@@ -150,6 +150,7 @@ describe("sprite public API", function()
         end,
       }, function(open_err, h)
         T.eq(open_err, nil, "open error")
+        T.eq(h.surface, nil, "Surface id hidden from consumer")
         h:assets({ test = svg }, function(asset_err)
           T.eq(asset_err, nil, "asset error")
           h:rows(1, { { id = "a", text = "a", indent = 0 } }, "a", function(row_err)

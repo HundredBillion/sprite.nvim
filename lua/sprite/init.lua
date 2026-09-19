@@ -171,6 +171,7 @@ end
 
 local Handle = {}
 Handle.__index = Handle
+local owned = setmetatable({}, { __mode = "k" })
 
 local function end_handle(self, kind, failure)
   if self.closed then
@@ -178,8 +179,8 @@ local function end_handle(self, kind, failure)
   end
   self.closed = true
   handles[self] = nil
-  if self.channel then
-    self.channel:close(failure or err("closed"))
+  if owned[self] and owned[self].channel then
+    owned[self].channel:close(failure or err("closed"))
   end
   callback(self.on_close, { kind = kind, error = failure })
 end
@@ -194,9 +195,9 @@ local function mutation(self, message, done)
       callback(done, err("closed"))
       return
     end
-    self.channel:request(message, "applied", function(e)
+    owned[self].channel:request(message, "applied", function(e)
       if not e and message.type == "list_rows" then
-        self.revision = message.revision
+        owned[self].revision = message.revision
       end
       callback(done, e)
     end)
@@ -247,8 +248,8 @@ local function focus(self, target, done)
     return
   end
   exchange(
-    self.context,
-    { type = "focus", pane = self.context.pane, target = target },
+    owned[self].context,
+    { type = "focus", pane = owned[self].context.pane, target = target },
     uv.now() + 2000,
     function(e, ch)
       if ch then
@@ -260,11 +261,11 @@ local function focus(self, target, done)
 end
 
 function Handle:focus(done)
-  focus(self, self.surface, done)
+  focus(self, owned[self].surface, done)
 end
 
 function Handle:focus_editor(done)
-  focus(self, self.context.return_target, done)
+  focus(self, owned[self].context.return_target, done)
 end
 
 function Handle:close()
@@ -322,10 +323,8 @@ function M.open(opts, done)
         finish(discovery_err)
         return
       end
-      local handle = setmetatable(
-        { context = context, on_event = opts.on_event, on_close = opts.on_close },
-        Handle
-      )
+      local handle = setmetatable({ on_event = opts.on_event, on_close = opts.on_close }, Handle)
+      owned[handle] = { context = context }
       cancel_open = exchange(
         context,
         {
@@ -364,12 +363,12 @@ function M.open(opts, done)
             finish(err("protocol", "invalid Surface id"))
             return
           end
-          handle.surface, handle.channel = surface, ch
+          owned[handle].surface, owned[handle].channel = surface, ch
           handles[handle] = true
           finish(nil, handle)
         end,
         function(close_err)
-          if not handle.closed and handle.channel then
+          if not handle.closed and owned[handle].channel then
             end_handle(handle, "failure", close_err)
           end
         end,
@@ -377,7 +376,7 @@ function M.open(opts, done)
           if handle.closed then
             return
           end
-          if event.type == "list_scroll" and event.revision ~= handle.revision then
+          if event.type == "list_scroll" and event.revision ~= owned[handle].revision then
             return
           end
           callback(handle.on_event, event)
@@ -397,7 +396,7 @@ end
 vim.api.nvim_create_autocmd("VimSuspend", {
   callback = function()
     for handle in pairs(handles) do
-      if handle.context.presentation == "terminal" then
+      if owned[handle].context.presentation == "terminal" then
         if handle.on_event then
           local ok, failure = pcall(handle.on_event, { type = "suspend" })
           if not ok then
