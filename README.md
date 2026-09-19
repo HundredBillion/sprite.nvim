@@ -26,6 +26,11 @@ adapter never does.
 
 ## Plugin API
 
+A `virtual_list` Surface description may set `root.border_side` to `all`,
+`left`, `right`, or `none`. If omitted, the host draws all four border edges.
+For an Explorer dock, use `right` when docked left and `left` when docked right
+to draw only the editor-facing separator. Other values are refused.
+
 Install the Lua API in ordinary Neovim with lazy.nvim:
 
 ```lua
