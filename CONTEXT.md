@@ -15,6 +15,22 @@ forwards Sprite's input back to Neovim. It paints nothing and holds no picture
 of the screen. One adapter per editing session.
 _Avoid_: the renderer, the UI, the bridge, the plugin (unqualified)
 
+**Plugin API**:
+The public Lua interface that lets a Neovim plugin discover Sprite and own a
+native dock alongside its editor. It reports availability and accepts the
+plugin's content and event callbacks.
+_Avoid_: the Adapter, the renderer
+
+**Editing Session**:
+One editor and its associated Sprite surfaces for the time that editor is
+running. A nested editor starts a separate session.
+_Avoid_: window, buffer, process (unqualified)
+
+**Editor Presentation**:
+The place where the person sees and controls the editor: an ordinary terminal
+or a Sprite grid Surface. A plugin can use the same API in either presentation.
+_Avoid_: mode, backend
+
 **Launcher**:
 The command a person runs in place of `nvim`. Outside Sprite it becomes plain
 Neovim; inside Sprite it becomes the Adapter. It takes exactly Neovim's

@@ -26,6 +26,36 @@ local NAMED = {
   insert = "Insert",
 }
 
+local function continuation(byte)
+  return byte and byte >= 0x80 and byte <= 0xbf
+end
+
+local function one_character(text)
+  local n = #text
+  local a, b, c, d = text:byte(1, 4)
+  if n == 1 then
+    return a < 0x80
+  elseif n == 2 then
+    return a >= 0xc2 and a <= 0xdf and continuation(b)
+  elseif n == 3 then
+    return a >= 0xe0
+      and a <= 0xef
+      and continuation(b)
+      and continuation(c)
+      and (a ~= 0xe0 or b >= 0xa0)
+      and (a ~= 0xed or b <= 0x9f)
+  elseif n == 4 then
+    return a >= 0xf0
+      and a <= 0xf4
+      and continuation(b)
+      and continuation(c)
+      and continuation(d)
+      and (a ~= 0xf0 or b >= 0x90)
+      and (a ~= 0xf4 or b <= 0x8f)
+  end
+  return false
+end
+
 local function base_name(key)
   if NAMED[key] then
     return NAMED[key]
@@ -37,7 +67,7 @@ local function base_name(key)
     return "F" .. key:sub(2)
   end
   -- A single character (any case) types itself.
-  if vim.fn.strchars(key) == 1 then
+  if one_character(key) then
     return key
   end
   return nil
@@ -60,7 +90,7 @@ function Input.key(name)
   if not base then
     return nil
   end
-  if #mods == 0 and vim.fn.strchars(base) == 1 and base ~= "lt" then
+  if #mods == 0 and one_character(base) and base ~= "lt" then
     -- A bare printable key needs no brackets, but < did (handled as lt above).
     return base
   end

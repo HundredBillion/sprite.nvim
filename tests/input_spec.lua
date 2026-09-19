@@ -21,6 +21,8 @@ T.eq(Input.key("cmd-s"), "<D-s>", "cmd is D")
 T.eq(Input.key("ctrl-enter"), "<C-CR>", "modifier plus named key")
 T.eq(Input.key("<"), "<lt>", "a bare less-than is escaped")
 T.eq(Input.key("é"), "é", "a single multibyte key types itself")
+T.eq(Input.key("😊"), "😊", "a four-byte Unicode key types itself")
+T.eq(Input.key("é"), nil, "a combining sequence is not one key character")
 
 -- input with text uses the text; < becomes <lt>; key is ignored.
 T.eq(
@@ -78,6 +80,43 @@ T.eq(
 )
 T.eq(Input.call({ type = "focus" }), { method = "nvim_ui_set_focus", args = { true } }, "focus")
 T.eq(Input.call({ type = "blur" }), { method = "nvim_ui_set_focus", args = { false } }, "blur")
+
+do
+  local cases = {
+    { event = { type = "input", key = "escape" }, expected = "<Esc>" },
+    { event = { type = "input", key = "enter", text = "\n" }, expected = "<CR>" },
+    { event = { type = "input", key = "ctrl-enter", text = "\n" }, expected = "<C-CR>" },
+    { event = { type = "input", key = "up" }, expected = "<Up>" },
+    { event = { type = "input", key = "ctrl-shift-a" }, expected = "<C-S-a>" },
+    { event = { type = "input", key = "é" }, expected = "é" },
+    { event = { type = "input", key = "<" }, expected = "<lt>" },
+    { event = { type = "input", key = "shift-1", text = "!" }, expected = "!" },
+  }
+  local finished, failure, values = false, nil, {}
+  local timer = vim.uv.new_timer()
+  timer:start(0, 0, function()
+    for i, case in ipairs(cases) do
+      local ok, result = pcall(Input.call, case.event)
+      if not ok then
+        failure = result
+        break
+      end
+      values[i] = result and result.args[1]
+    end
+    finished = true
+    timer:close()
+  end)
+  T.ok(
+    vim.wait(1000, function()
+      return finished
+    end),
+    "fast-context input translation returned"
+  )
+  T.eq(failure, nil, "fast-context input translation has no forbidden Vimscript call")
+  for i, case in ipairs(cases) do
+    T.eq(values[i], case.expected, "fast-context input " .. i)
+  end
+end
 
 -- warning maps to no call (the adapter logs it separately).
 T.eq(Input.call({ type = "warning", message = "x" }), nil, "warning is not a Neovim call")

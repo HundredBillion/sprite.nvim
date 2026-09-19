@@ -10,7 +10,9 @@ local function run(env, args)
   end
   -- Unset the Sprite vars for a clean baseline, then apply env.
   local cmd = string.format(
-    "env -u SPRITE_SURFACE_SOCKET -u SPRITE_SURFACE_KEY -u SPRITE_PANE -u NVIM %s %q %s",
+    "env -u SPRITE_SURFACE_SOCKET -u SPRITE_SURFACE_KEY -u SPRITE_PANE -u NVIM PATH=%q VIMRUNTIME=%q %s %q %s",
+    vim.fn.fnamemodify(vim.v.progpath, ":h") .. ":" .. (vim.env.PATH or ""),
+    vim.env.VIMRUNTIME,
     prefix,
     launcher,
     args
@@ -26,8 +28,8 @@ local function run(env, args)
   return status
 end
 
-T.eq(select(3, run({}, "--headless -c 'cquit 0'")), 0, "fail-open returns nvim's exit 0")
-T.eq(select(3, run({}, "--headless -c 'cquit 3'")), 3, "fail-open returns nvim's exit 3")
+T.eq(select(3, run({}, "--clean --headless -c 'cquit 0'")), 0, "fail-open returns nvim's exit 0")
+T.eq(select(3, run({}, "--clean --headless -c 'cquit 3'")), 3, "fail-open returns nvim's exit 3")
 -- NVIM set (a nested :terminal editor) also falls open.
 T.eq(
   select(
@@ -37,7 +39,7 @@ T.eq(
       SPRITE_SURFACE_SOCKET = "/tmp/s",
       SPRITE_SURFACE_KEY = "k",
       SPRITE_PANE = "1",
-    }, "--headless -c 'cquit 4'")
+    }, "--clean --headless -c 'cquit 4'")
   ),
   4,
   "NVIM present falls open"
