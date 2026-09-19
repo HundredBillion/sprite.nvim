@@ -7,6 +7,8 @@ local Rpc = dofile(here .. "/rpc.lua")
 local Redraw = dofile(here .. "/redraw.lua")
 local Input = dofile(here .. "/input.lua")
 local Log = dofile(here .. "/log.lua")
+local Session = dofile(here .. "/session.lua")
+local repo = vim.fn.fnamemodify(here, ":h:h")
 
 local uv = vim.uv
 Log.open()
@@ -29,6 +31,7 @@ local hangup = false
 local rpc -- the RPC client to the editor
 local translator = Redraw.new()
 local attached = false
+local surface
 
 -- The stdin-drain handle. Only live once the Surface path is committed (after
 -- the handshake's `opened` verdict); `fail_open` must tear it down before
@@ -160,8 +163,14 @@ function start_editor(cols, rows)
   attached = true
   local ein = uv.new_pipe(false)
   local eout = uv.new_pipe(false)
+  local command = Session.bootstrap(repo, surface)
+  if not command then
+    fail_open("invalid Surface id")
+    return
+  end
+  local args = vim.list_extend({ "--embed", "--cmd", command }, user_args)
   editor = uv.spawn(vim.v.progpath, {
-    args = vim.list_extend({ "--embed" }, user_args),
+    args = args,
     stdio = { ein, eout, 2 },
   }, function(code)
     editor_exit = code or 0
@@ -263,6 +272,7 @@ local function connect()
       type = "open",
       version = 1,
       pane = pane,
+      owner_pid = uv.os_getpid(),
       position = "fill",
       focus = true,
       description = { version = 1, root = { kind = "grid", cols = 80, rows = 24 } },
@@ -291,7 +301,19 @@ local function connect()
         fail_open("open refused: " .. line)
         return
       end
-      Log.write("handshake", "opened surface " .. tostring(verdict.surface))
+      surface = verdict.surface
+      if
+        not (
+          type(surface) == "number"
+          and surface > 0
+          and surface <= 9007199254740991
+          and surface == math.floor(surface)
+        )
+      then
+        fail_open("invalid Surface id")
+        return
+      end
+      Log.write("handshake", "opened surface " .. tostring(surface))
       -- The Surface path is now committed: only from here on does anything
       -- else own fd 0.
       drain_stdin()

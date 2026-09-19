@@ -45,10 +45,14 @@ function M.serve(path, opts)
         if not self.opened then
           -- The first line is "<key> <open json>"; answer it.
           self.opened = true
+          local payload = line:match("^[^ ]+ (.+)$")
+          if payload then
+            self.first_open = vim.json.decode(payload)
+          end
           if opts.refuse then
             self.send({ type = "refused", reason = "test refuses" })
           else
-            self.send({ type = "opened", surface = 1 })
+            self.send({ type = "opened", surface = opts.surface or 1 })
             self.send({ type = "resize", width = 640, height = 384, cols = 80, rows = 24 })
           end
         else
