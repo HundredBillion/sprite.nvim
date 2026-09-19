@@ -125,7 +125,7 @@ local function deadline(self, milliseconds, code)
 end
 
 local function encoded(self, message)
-  local ok, json = pcall(vim.json.encode, message)
+  local ok, json = pcall(vim.fn.json_encode, message)
   if not ok then
     return nil, error_value("protocol", "cannot encode message")
   end
@@ -156,6 +156,15 @@ local function matches(message, item)
     return false
   end
   if message.type == "applied" then
+    local operation = ({
+      assets = "assets",
+      list_rows = "list_rows",
+      list_state = "list_state",
+      update = "update",
+    })[item.message.type]
+    if operation and message.operation ~= operation then
+      return false
+    end
     for _, field in ipairs({ "operation", "revision" }) do
       if item.message[field] ~= nil and message[field] ~= item.message[field] then
         return false
@@ -240,37 +249,42 @@ function Channel.connect(opts, callback)
       close(self, error_value("unavailable", tostring(err)))
       return
     end
-    self.pipe:read_start(function(read_err, bytes)
+    vim.schedule(function()
       if self.closed then
         return
       end
-      if read_err then
-        close(self, error_value("unavailable", tostring(read_err)))
-        return
-      end
-      if not bytes then
-        local ok, decode_err = self.decoder:finish()
+      self.pipe:read_start(function(read_err, bytes)
+        if self.closed then
+          return
+        end
+        if read_err then
+          close(self, error_value("unavailable", tostring(read_err)))
+          return
+        end
+        if not bytes then
+          local ok, decode_err = self.decoder:finish()
+          if not ok then
+            close(self, decode_err)
+          else
+            close(self, error_value("unavailable", "connection closed"))
+          end
+          return
+        end
+        local ok, decode_err = self.decoder:feed(bytes)
         if not ok then
           close(self, decode_err)
-        else
-          close(self, error_value("unavailable", "connection closed"))
         end
+      end)
+      local line, encode_err = encoded(self, opts.first)
+      if not line then
+        close(self, encode_err)
         return
       end
-      local ok, decode_err = self.decoder:feed(bytes)
-      if not ok then
-        close(self, decode_err)
-      end
-    end)
-    local line, encode_err = encoded(self, opts.first)
-    if not line then
-      close(self, encode_err)
-      return
-    end
-    self.pipe:write(line, function(write_err)
-      if write_err then
-        close(self, error_value("unavailable", tostring(write_err)))
-      end
+      self.pipe:write(line, function(write_err)
+        if write_err then
+          close(self, error_value("unavailable", tostring(write_err)))
+        end
+      end)
     end)
   end)
   return function()
@@ -282,6 +296,30 @@ function Channel:request(message, expected_type, callback)
   if self.closed then
     teardown(callback, error_value("closed", "closed"))
     return
+  end
+  if message.type == "list_state" then
+    for _, item in ipairs({ self.queue[#self.queue] }) do
+      if item.message.type == "list_state" and item.message.revision == message.revision then
+        local patch = vim.tbl_extend("force", item.message, message)
+        if patch.reveal ~= nil and patch.scroll ~= nil then
+          patch.reveal = message.reveal
+          patch.scroll = message.scroll
+        end
+        local merged, merge_err = encoded(self, patch)
+        if not merged or self.queued_bytes - #item.line + #merged > LIMIT then
+          teardown(callback, merge_err or error_value("queue_full", "request queue full"))
+          return
+        end
+        self.queued_bytes = self.queued_bytes - #item.line + #merged
+        item.line, item.message = merged, patch
+        local previous = item.callback
+        item.callback = function(err, reply)
+          safe_call(previous, err, reply)
+          safe_call(callback, err, reply)
+        end
+        return
+      end
+    end
   end
   local line, err = encoded(self, message)
   if not line then
