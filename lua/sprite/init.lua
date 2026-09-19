@@ -401,16 +401,24 @@ function M.open(opts, done)
 end
 
 function M.on_resume(fn)
-  resumes[fn] = true
+  assert(type(fn) == "function", "resume callback must be a function")
+  local subscription = {}
+  resumes[subscription] = fn
   return function()
-    resumes[fn] = nil
+    resumes[subscription] = nil
   end
 end
 
 vim.api.nvim_create_autocmd("VimSuspend", {
   callback = function()
+    local open = {}
     for handle in pairs(handles) do
       if owned[handle].context.presentation == "terminal" then
+        open[#open + 1] = handle
+      end
+    end
+    for _, handle in ipairs(open) do
+      if not handle.closed then
         if handle.on_event then
           local ok, failure = pcall(handle.on_event, { type = "suspend" })
           if not ok then
@@ -424,8 +432,15 @@ vim.api.nvim_create_autocmd("VimSuspend", {
 })
 vim.api.nvim_create_autocmd("VimResume", {
   callback = function()
-    for fn in pairs(resumes) do
-      callback(fn)
+    for subscription, fn in pairs(resumes) do
+      vim.schedule(function()
+        if not exiting and resumes[subscription] == fn then
+          local ok, failure = pcall(fn)
+          if not ok then
+            vim.notify("sprite callback: " .. tostring(failure), vim.log.levels.ERROR)
+          end
+        end
+      end)
     end
   end,
 })
@@ -435,6 +450,7 @@ vim.api.nvim_create_autocmd("VimLeavePre", {
       return
     end
     exiting = true
+    resumes = {}
     local cancellations = {}
     for _, cancel in pairs(pending) do
       cancellations[#cancellations + 1] = cancel

@@ -1,9 +1,8 @@
 local uv = vim.uv
 local sprite = require("sprite")
 local Session = sprite.session
-local fixture = vim.json.decode(
-  table.concat(vim.fn.readfile("../native-explorer/tests/fixtures/surface-list-v1.json"), "\n")
-)
+local fixture =
+  vim.json.decode(table.concat(vim.fn.readfile("tests/fixtures/surface-list-v1.json"), "\n"))
 local original_await = Session.await_ui
 local path = vim.fn.tempname()
 local key = "public-test-key"
@@ -392,6 +391,28 @@ describe("owned handle lifecycle", function()
   T.eq(requests[#requests].message.target, "terminal", "focus return target")
   stop()
   Session.await_ui = original_await
+end)
+
+describe("resume subscriptions", function()
+  local called = 0
+  local unsubscribe = sprite.on_resume(function()
+    called = called + 1
+  end)
+  vim.api.nvim_exec_autocmds("VimResume", {})
+  unsubscribe()
+  vim.wait(30)
+  T.eq(called, 0, "unsubscribe cancels a queued resume callback")
+  local again = sprite.on_resume(function()
+    called = called + 1
+  end)
+  vim.api.nvim_exec_autocmds("VimResume", {})
+  wait_for(function()
+    return called == 1
+  end)
+  again()
+  vim.api.nvim_exec_autocmds("VimResume", {})
+  vim.wait(30)
+  T.eq(called, 1, "removed subscription stays removed")
 end)
 
 describe("unexpected owned socket EOF", function()

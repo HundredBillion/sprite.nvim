@@ -20,6 +20,48 @@ T.ok(bad:feed("{broken}\n") == nil, "bad JSON rejected")
 local bounded = Channel.decoder(function() end, 8)
 T.ok(bounded:feed("123456789") == nil, "oversize frame rejected")
 
+do
+  local Fake = dofile("tests/fake_sprite.lua")
+  local path = vim.fn.tempname() .. ".sock"
+  local server = Fake.serve(path, { ack_delay_ms = 100 })
+  local results = {}
+  Channel.connect({
+    path = path,
+    key = "secret",
+    first = {
+      type = "open",
+      version = 1,
+      pane = 1,
+      owner_pid = uv.os_getpid(),
+      position = "fill",
+      focus = true,
+      description = vim.empty_dict(),
+    },
+    timeout_ms = 30,
+  }, function(err, ch)
+    T.eq(err, nil, "delayed fake accepts open")
+    if not ch then
+      return
+    end
+    ch:request({ type = "assets", entries = vim.empty_dict() }, "applied", function(e)
+      results[#results + 1] = e and e.code or "ok"
+    end)
+    ch:request({ type = "assets", entries = vim.empty_dict() }, "applied", function(e)
+      results[#results + 1] = e and e.code or "ok"
+    end)
+  end)
+  T.ok(
+    vim.wait(1000, function()
+      return #results == 2
+    end),
+    "pending request reaches timeout"
+  )
+  T.eq(results, { "timeout", "timeout" }, "first timeout closes queued request")
+  vim.wait(150)
+  T.eq(#results, 2, "late acknowledgement cannot finish another request")
+  server.close()
+end
+
 local function scenario(reply, expected, opts)
   opts = opts or {}
   local path = "/tmp/sprite-channel-" .. uv.os_getpid() .. "-" .. tostring(uv.hrtime()) .. ".sock"

@@ -49,7 +49,9 @@ timer:start(20, 20, function()
     uv.stop()
   end
 end)
-uv.run()
+while timer:is_active() and uv.loop_alive() do
+  uv.run()
+end
 if child then
   child:kill("sigterm")
   child:close()
@@ -93,7 +95,9 @@ poll:start(20, 20, function()
     uv.stop()
   end
 end)
-uv.run()
+while poll:is_active() and uv.loop_alive() do
+  uv.run()
+end
 if unattached then
   unattached:kill("sigterm")
   unattached:close()

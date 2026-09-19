@@ -64,6 +64,33 @@ local function row_text(rows, r)
   return table.concat(out)
 end
 
+do
+  local Fake = dofile(root .. "/tests/fake_sprite.lua")
+  local sock = "/tmp/sprite-nvim-stopped-" .. uv.getpid() .. ".sock"
+  local server = Fake.serve(sock)
+  local code
+  local child = uv.spawn(vim.v.progpath, {
+    args = { "-l", root .. "/tests/adapter_stopped_loop_child.lua" },
+    env = adapter_env(sock),
+    stdio = { nil, nil, 2 },
+  }, function(exit_code)
+    code = exit_code
+  end)
+  T.ok(
+    vim.wait(3000, function()
+      return #server.lines > 0 or code ~= nil
+    end, 10),
+    "stopped-loop child reaches a verdict"
+  )
+  T.eq(code, nil, "stale libuv stop cannot make a live adapter exit")
+  T.ok(#server.lines > 0, "adapter redraw arrives after prior libuv stop")
+  T.eq(server.invalid, nil, "strict fake accepts stopped-loop adapter messages")
+  if child then
+    child:kill("sigterm")
+  end
+  server.close()
+end
+
 -- Run the adapter as a child, driven by a fake Sprite, until `predicate(lines)`
 -- holds or a timeout. Returns the collected lines. The adapter connects to
 -- `sock`; the child gets the Sprite env so the launcher would take the adapter
@@ -85,10 +112,13 @@ local function drive(sock, opts, predicate, timeout_ms)
       uv.stop()
     end
   end)
-  uv.run()
+  while timer:is_active() and uv.loop_alive() do
+    uv.run()
+  end
   if child then
     child:kill("sigterm")
   end
+  T.eq(server.invalid, nil, "strict fake accepts adapter wire messages")
   server.close()
   return server.lines
 end
@@ -112,9 +142,15 @@ do
   end
   T.ok(saw_tilde, "the empty buffer's tildes reach Sprite as rows")
 
+  local Fake = dofile(root .. "/tests/fake_sprite.lua")
+  for _, line in ipairs(lines) do
+    local valid, reason = Fake.validate(vim.json.decode(line))
+    T.ok(valid, "fake Sprite accepts adapter batch: " .. tostring(reason))
+  end
+
   -- Nothing the adapter sends may carry an empty-array highlight value
   -- ("...":[]) -- the real Sprite refuses it, which would kill the session on
-  -- the first frame. The fake Sprite does not validate, so assert it here.
+  -- the first frame. Keep this check as a direct wire-level diagnostic.
   local bad = false
   for _, l in ipairs(lines) do
     if l:find('":[]', 1, true) then
@@ -167,7 +203,9 @@ do
       uv.stop()
     end
   end)
-  uv.run()
+  while timer:is_active() and uv.loop_alive() do
+    uv.run()
+  end
   if child then
     child:kill("sigterm")
   end
@@ -218,7 +256,9 @@ do
       uv.stop()
     end
   end)
-  uv.run()
+  while timer:is_active() and uv.loop_alive() do
+    uv.run()
+  end
   if child then
     child:kill("sigterm")
   end
@@ -244,7 +284,9 @@ do
     timer:stop()
     uv.stop()
   end)
-  uv.run()
+  while timer:is_active() and uv.loop_alive() do
+    uv.run()
+  end
   if child then
     child:kill("sigterm")
   end
@@ -291,7 +333,9 @@ do
     timer:stop()
     uv.stop()
   end)
-  uv.run()
+  while timer:is_active() and uv.loop_alive() do
+    uv.run()
+  end
   if child then
     child:kill("sigterm")
   end

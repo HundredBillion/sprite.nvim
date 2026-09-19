@@ -328,7 +328,11 @@ local function connect()
 end
 
 connect()
-uv.run()
+-- A stop left pending by Neovim can make run return while active handles still
+-- exist. Resume the same loop until the editor exits or the Surface hangs up.
+while not hangup and editor_exit == nil and uv.loop_alive() do
+  uv.run()
+end
 -- Runs after uv.run() returns, so it is not in a fast event context. A hangup
 -- (Sprite went away) always reports 129; otherwise the editor's own code.
 os.exit(hangup and 129 or editor_exit or 0)

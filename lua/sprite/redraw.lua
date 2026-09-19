@@ -48,9 +48,16 @@ end
 local handlers = {}
 
 function handlers.grid_line(self, t)
-  -- t = {grid, row, col_start, cells, wrap}. Cells are already [text],
-  -- [text,hl], or [text,hl,repeat] — exactly Sprite's cell tuple.
-  self.ops[#self.ops + 1] = { type = "rows", rows = { { row = t[2], col = t[3], cells = t[4] } } }
+  local cells = {}
+  for _, cell in ipairs(t[4]) do
+    if cell[3] ~= 0 then
+      cells[#cells + 1] = cell
+    end
+  end
+  if #cells > 0 then
+    self.ops[#self.ops + 1] =
+      { type = "rows", rows = { { row = t[2], col = t[3], cells = cells } } }
+  end
 end
 
 function handlers.hl_attr_define(self, t)

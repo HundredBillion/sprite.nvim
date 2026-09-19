@@ -16,6 +16,16 @@ do
   }, "grid_line becomes rows with cells verbatim")
 end
 
+do
+  local s = Redraw.new()
+  s:event({ "grid_line", { 1, 0, 2, { { " ", 0, 0 }, { "x", 3 }, { " ", 0, 0 } }, false } })
+  T.eq(s:take_batch(), {
+    { type = "rows", rows = { { row = 0, col = 2, cells = { { "x", 3 } } } } },
+  }, "zero-repeat redraw cells are omitted before Sprite sees the batch")
+  s:event({ "grid_line", { 1, 0, 2, { { " ", 0, 0 } }, false } })
+  T.eq(s:take_batch(), nil, "a no-op grid line emits no rows operation")
+end
+
 -- hl_attr_define -> highlights.define with colours as #rrggbb and underline kind.
 do
   local s = Redraw.new()
