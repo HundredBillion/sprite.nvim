@@ -124,12 +124,12 @@ local function deadline(self, milliseconds, code)
   end)
 end
 
-local function encoded(self, message)
+local function encoded(self, message, authenticated)
   local ok, json = pcall(vim.fn.json_encode, message)
   if not ok then
     return nil, error_value("protocol", "cannot encode message")
   end
-  local line = self.key .. " " .. json .. "\n"
+  local line = (authenticated and self.key .. " " or "") .. json .. "\n"
   if #line > LIMIT then
     return nil, error_value("queue_full", "message too large")
   end
@@ -275,7 +275,7 @@ function Channel.connect(opts, callback)
           close(self, decode_err)
         end
       end)
-      local line, encode_err = encoded(self, opts.first)
+      local line, encode_err = encoded(self, opts.first, true)
       if not line then
         close(self, encode_err)
         return

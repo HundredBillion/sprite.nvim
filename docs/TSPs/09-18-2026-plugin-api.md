@@ -103,6 +103,12 @@ do not kill an editor because a plugin callback threw.
 `{pane,path,key,pid,return_target,presentation='terminal'|'grid'}`.
 `Session.bootstrap(repo, surface) -> string` produces the early Lua --cmd.
 Do not cache successful ownership beyond one discovery/open sequence.
+For an ordinary terminal UI, `pid` is the attached terminal UI client's
+reported process ID (`nvim_get_chan_info(ui.chan).client.attributes.pid`),
+provided that channel is a terminal-attached UI. Neovim may run its builtin
+TUI in a parent process while the editing process has a different process
+group. For an embedded grid marker, `pid` remains the marked editor process
+ID. Missing or ambiguous terminal UI client PID fails closed.
 
 - [ ] Add table-driven tests for missing environment, malformed pane, wrong-PID marker, valid grid marker, ordinary tty, no attached UI, nested NVIM, TMUX/STY, and pipe stdin. Pass an injected facts table to internal `Session.resolve(facts)`; current() supplies actual vim/uv values.
 - [ ] Test a stale marker is refused instead of falling through to terminal mode. Test environment inheritance without a marker cannot choose a parent grid. With an attached terminal UI and valid tty, return_target is exactly `terminal`.

@@ -27,6 +27,7 @@ local function server(responder)
     listener:accept(client)
     clients[#clients + 1] = client
     local buffer = ""
+    local first = true
     client:read_start(function(e, bytes)
       if e or not bytes then
         return
@@ -39,8 +40,15 @@ local function server(responder)
         end
         local line = buffer:sub(1, nl - 1)
         buffer = buffer:sub(nl + 1)
-        local secret, document = line:match("^([^ ]+) (.+)$")
-        T.eq(secret, key, "authenticated request")
+        local document = line
+        if first then
+          local secret
+          secret, document = line:match("^([^ ]+) (.+)$")
+          T.eq(secret, key, "authenticated first request")
+          first = false
+        else
+          T.ok(line:sub(1, 1) == "{", "later requests are raw JSON")
+        end
         local message = vim.json.decode(document)
         requests[#requests + 1] = { message = message, line = document }
         local response = responder(message, client)

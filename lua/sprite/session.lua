@@ -12,6 +12,26 @@ local function pane_integer(value)
   return n and n >= 0 and n <= MAX_SAFE_INTEGER and n == math.floor(n) and n or nil
 end
 
+function Session.terminal_ui_owner(uis, channel_info)
+  channel_info = channel_info or vim.api.nvim_get_chan_info
+  local owner
+  for _, ui in ipairs(uis) do
+    if ui.stdin_tty and ui.stdout_tty and type(ui.chan) == "number" then
+      local ok, info = pcall(channel_info, ui.chan)
+      local client = ok and info.client
+      local pid = client
+        and client.type == "ui"
+        and client.attributes
+        and positive_integer(client.attributes.pid)
+      if not pid or owner and owner ~= pid then
+        return nil
+      end
+      owner = pid
+    end
+  end
+  return owner
+end
+
 function Session.resolve(facts)
   local pane = pane_integer(facts.pane)
   if
@@ -27,7 +47,7 @@ function Session.resolve(facts)
   if not pid then
     return nil, { code = "unavailable", message = "process ID unavailable" }
   end
-  local target, presentation
+  local target, presentation, owner_pid
   if facts.marker ~= nil then
     if type(facts.marker) ~= "table" or facts.marker.pid ~= pid then
       return nil, { code = "unavailable", message = "stale editor marker" }
@@ -37,6 +57,7 @@ function Session.resolve(facts)
       return nil, { code = "unavailable", message = "invalid editor marker" }
     end
     presentation = "grid"
+    owner_pid = pid
   else
     if facts.nvim or facts.tmux or facts.sty or facts.stdin ~= "tty" then
       return nil, { code = "unavailable", message = "terminal ownership unavailable" }
@@ -44,26 +65,32 @@ function Session.resolve(facts)
     if type(facts.uis) ~= "table" or #facts.uis == 0 then
       return nil, { code = "unavailable", message = "UI unavailable" }
     end
+    owner_pid = positive_integer(facts.ui_owner_pid)
+    if not owner_pid then
+      return nil, { code = "unavailable", message = "terminal UI owner unavailable" }
+    end
     target, presentation = "terminal", "terminal"
   end
   return {
     pane = pane,
     path = facts.path,
     key = facts.key,
-    pid = pid,
+    pid = owner_pid,
     return_target = target,
     presentation = presentation,
   }
 end
 
 function Session.current()
+  local uis = vim.api.nvim_list_uis()
   return Session.resolve({
     pane = uv.os_getenv("SPRITE_PANE"),
     path = uv.os_getenv("SPRITE_SURFACE_SOCKET"),
     key = uv.os_getenv("SPRITE_SURFACE_KEY"),
     pid = uv.os_getpid(),
     marker = vim.g.sprite_session,
-    uis = vim.api.nvim_list_uis(),
+    uis = uis,
+    ui_owner_pid = Session.terminal_ui_owner(uis),
     stdin = uv.guess_handle(0),
     nvim = uv.os_getenv("NVIM"),
     tmux = uv.os_getenv("TMUX"),
