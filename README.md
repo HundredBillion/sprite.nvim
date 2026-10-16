@@ -79,3 +79,9 @@ source in `icon`. `active` is a buffer number. `select(buffer)` and
 closing. The bridge assigns IDs/revisions, rejects stale clicks, limits visible
 items to 256 around the active buffer, bounds icon payloads, and coalesces
 unchanged updates. A provider error restores the ordinary tabline.
+
+On Sprite builds with definition-pointer support, holding Cmd/Super over a
+highlighted function or method shows a pointing hand. The adapter requests
+Neovim's highlight metadata and forwards an optional `definition` hint on the
+highlight attributes. Older hosts ignore this hint. The hint indicates a
+navigation action; the language server still resolves the destination on click.

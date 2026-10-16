@@ -259,7 +259,7 @@ function start_editor(cols, rows)
   end)
   rpc:request(
     "nvim_ui_attach",
-    { cols, rows, { rgb = true, ext_linegrid = true, ext_tabline = native_tabs } },
+    { cols, rows, { rgb = true, ext_hlstate = true, ext_linegrid = true, ext_tabline = native_tabs } },
     function(err)
       if err ~= nil and err ~= vim.NIL then
         Log.write("attach", "nvim_ui_attach failed: " .. vim.inspect(err))
