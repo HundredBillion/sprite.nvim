@@ -65,6 +65,7 @@ function handlers.hl_attr_define(self, t)
   local attrs = {}
   for _, info in ipairs(t[4] or {}) do
     local name = info.hi_name or info.ui_name or ''
+    if info.ui_name == 'FloatTitle' or name == 'VSVimDefinitionTitle' then attrs.ui_font = true end
     if name == 'Function' then attrs.definition = true end
     for _, prefix in ipairs({ '@function', '@method', '@lsp.type.function', '@lsp.type.method' }) do
       if name == prefix or name:sub(1, #prefix + 1) == prefix .. '.' then
