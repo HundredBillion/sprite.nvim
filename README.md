@@ -65,3 +65,17 @@ plugin against Sprite's committed protocol fixture from a local Sprite
 checkout, run `SPRITE_SOURCE=/path/to/Sprite sh scripts/test-protocol.sh`.
 The protocol integration command requires `SPRITE_SOURCE` and exits with an
 error if it is missing.
+
+Native file tabs are enabled automatically when the grid host advertises
+`grid-tabs-v1`. Older Sprite versions and ordinary terminals retain Neovim's
+normal tabline. The native strip is 35 pixels tall and supports file selection,
+close actions, modified markers, and optional inline SVG icons.
+
+Distros can configure `require('sprite.tabs').setup` with `snapshot`, `select`,
+and `close` callbacks. `snapshot()` returns `{ items, active, height, colors }`;
+each item has a Neovim `buffer` number, `label`, `modified`, and optional SVG
+source in `icon`. `active` is a buffer number. `select(buffer)` and
+`close(buffer)` run inside Neovim; the distro should preserve unsaved work when
+closing. The bridge assigns IDs/revisions, rejects stale clicks, limits visible
+items to 256 around the active buffer, bounds icon payloads, and coalesces
+unchanged updates. A provider error restores the ordinary tabline.
