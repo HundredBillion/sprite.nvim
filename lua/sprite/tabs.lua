@@ -3,10 +3,27 @@ local provider = {}
 local channel, revision, previous = nil, 0, nil
 local targets = {}
 local last_buffer
+local dirty, pending = true, false
+local modified = {}
 
 local function changed()
-  if channel then
-    vim.rpcnotify(channel, "sprite_tabs_changed")
+  dirty = true
+  if channel and not pending then
+    pending = true
+    vim.schedule(function()
+      pending = false
+      vim.rpcnotify(channel, "sprite_tabs_changed")
+    end)
+  end
+end
+
+local function modified_changed(buffer)
+  if vim.api.nvim_buf_is_valid(buffer) then
+    local value = vim.bo[buffer].modified
+    if modified[buffer] ~= value then
+      modified[buffer] = value
+      changed()
+    end
   end
 end
 
@@ -42,6 +59,19 @@ local function bounded_label(value)
 end
 
 function M.snapshot()
+  if channel then
+    local current = vim.api.nvim_get_current_buf()
+    modified_changed(current)
+    for _, buffer in pairs(targets) do
+      if buffer ~= current then
+        modified_changed(buffer)
+      end
+    end
+    if not dirty then
+      return vim.NIL
+    end
+  end
+  dirty = false
   local state = (provider.snapshot or default_snapshot)()
   local items, mapping = {}, {}
   local icon_bytes = 0
@@ -70,6 +100,7 @@ function M.snapshot()
         end
         items[#items + 1] = tab
         mapping[id] = b
+        modified[b] = vim.bo[b].modified
         if b == state.active then
           active = id
         end
@@ -138,21 +169,38 @@ function M.attach(id)
     "BufDelete",
     "BufEnter",
     "BufFilePost",
-    "TextChanged",
-    "TextChangedI",
+    "FileType",
     "BufWritePost",
     "ColorScheme",
     "TabEnter",
+    "TabClosed",
   }, {
     group = group,
-    callback = function()
-      vim.schedule(changed)
+    callback = function(event)
+      if event.event == "BufDelete" then
+        modified[event.buf] = nil
+      end
+      changed()
     end,
   })
-  vim.api.nvim_create_autocmd(
-    "OptionSet",
-    { group = group, pattern = "modified", callback = changed }
-  )
+  vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI", "TextChangedP" }, {
+    group = group,
+    callback = function(event)
+      modified_changed(event.buf)
+    end,
+  })
+  vim.api.nvim_create_autocmd("OptionSet", {
+    group = group,
+    pattern = "modified",
+    callback = function(event)
+      modified_changed(event.buf)
+    end,
+  })
+  vim.api.nvim_create_autocmd("OptionSet", {
+    group = group,
+    pattern = { "buflisted", "buftype" },
+    callback = changed,
+  })
   changed()
 end
 
