@@ -34,6 +34,7 @@ T.ok(
 if #updates > 0 then
   local initial = updates[#updates]
   T.eq(initial.items[1].label, "Untitled")
+  T.eq(initial.height, nil, "default provider leaves tab height to the host")
   server.send({ type = "input", text = ":enew | file native-tabs.lua" })
   server.send({ type = "input", key = "enter" })
   T.ok(
@@ -100,7 +101,7 @@ if #updates > 0 then
     "  for _, b in ipairs(vim.fn.getbufinfo({buflisted=1})) do",
     "    items[#items+1] = {buffer=b.bufnr, label=vim.fn.fnamemodify(b.name, ':t'), modified=vim.bo[b.bufnr].modified}",
     "  end",
-    "  return {items=items, active=vim.api.nvim_get_current_buf()}",
+    "  return {items=items, active=vim.api.nvim_get_current_buf(), height=vim.g.native_tab_height}",
     "end})",
   }, fixture)
   local function command(text)
@@ -114,6 +115,12 @@ if #updates > 0 then
     return tonumber(vim.fn.readfile(metrics)[1])
   end
   command("luafile " .. fixture)
+  command("let g:native_tab_height=48 | doautocmd ColorScheme")
+  T.eq(updates[#updates].height, 48, "provider can request a custom native tab height")
+  command(
+    "lua vim.g.native_tab_height=nil; vim.api.nvim_exec_autocmds('ColorScheme', {pattern='default'})"
+  )
+  T.eq(updates[#updates].height, nil, "omitted height uses the host default")
   local before = calls()
   server.send({ type = "input", text = "ix" })
   server.send({ type = "input", key = "escape" })

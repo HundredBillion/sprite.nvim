@@ -47,7 +47,7 @@ local function default_snapshot()
       }
     end
   end
-  return { items = items, active = last_buffer, height = 35 }
+  return { items = items, active = last_buffer }
 end
 
 local function bounded_label(value)
@@ -109,11 +109,13 @@ function M.snapshot()
   end
   local result = {
     type = "tabs",
-    height = math.max(24, math.min(64, state.height or 35)),
     items = items,
     active = active or vim.NIL,
     colors = state.colors,
   }
+  if state.height then
+    result.height = math.max(24, math.min(64, state.height))
+  end
   if vim.deep_equal(previous, result) then
     return vim.NIL
   end

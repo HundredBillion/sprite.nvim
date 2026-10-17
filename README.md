@@ -73,6 +73,8 @@ close actions, modified markers, and optional inline SVG icons.
 
 Distros can configure `require('sprite.tabs').setup` with `snapshot`, `select`,
 and `close` callbacks. `snapshot()` returns `{ items, active, height, colors }`;
+`height` is optional and defaults to the host's tab height (35 pixels in Sprite).
+Set it to a value from 24 to 64 to request a different height;
 each item has a Neovim `buffer` number, `label`, `modified`, and optional SVG
 source in `icon`. `active` is a buffer number. `select(buffer)` and
 `close(buffer)` run inside Neovim; the distro should preserve unsaved work when
