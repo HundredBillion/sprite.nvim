@@ -40,10 +40,30 @@ Install the Lua API in ordinary Neovim with lazy.nvim:
 }
 ```
 
-The API loads in any Neovim 0.11 or later. `require("sprite").available(callback)`
-reports whether this editor is in an eligible Sprite pane; plugins can use
-their ordinary Neovim view when it is unavailable. A Sprite checkout and a
-special setup function are not required for consumers.
+The API loads in any Neovim 0.11 or later. When opening a dock, call
+`sprite.open(opts, callback)` directly:
+
+```lua
+local sprite = require("sprite")
+
+sprite.open({
+  side = "left",
+  width = 300,
+  description = description,
+}, function(err, dock)
+  if err then
+    -- Keep using the plugin's ordinary Neovim view.
+    return
+  end
+  -- Use the opened dock.
+end)
+```
+
+`open` waits for the current UI context and checks native dock capability and
+eligibility itself. A preceding `sprite.available(callback)` repeats that
+discovery, so use `available` only when checking whether this editor is in an
+eligible Sprite pane without opening a dock. A Sprite checkout and a special
+setup function are not required for consumers.
 
 To launch the editor through Sprite's grid presentation from this checkout, run:
 
