@@ -138,19 +138,22 @@ do
   T.ok(encoded:find('"1":[]', 1, true) == nil, "empty attrs never encode as an array")
 end
 
-for _, name in ipairs({ 'Function', '@function.call.python', '@lsp.type.method.ruby' }) do
+for _, name in ipairs({ "Function", "@function.call.python", "@lsp.type.method.ruby" }) do
   local s = Redraw.new()
-  s:event({ 'hl_attr_define', { 81, {}, {}, { { kind = 'syntax', hi_name = name } } } })
-  T.eq(s:take_batch()[1].define['81'].definition, true, 'callable highlight carries pointer hint')
+  s:event({ "hl_attr_define", { 81, {}, {}, { { kind = "syntax", hi_name = name } } } })
+  T.eq(s:take_batch()[1].define["81"].definition, true, "callable highlight carries pointer hint")
 end
-for _, name in ipairs({ 'Comment', '@functionality', '@variable' }) do
+for _, name in ipairs({ "Comment", "@functionality", "@variable" }) do
   local s = Redraw.new()
-  s:event({ 'hl_attr_define', { 81, {}, {}, { { kind = 'syntax', hi_name = name } } } })
-  T.eq(s:take_batch()[1].define['81'].definition, nil, 'non-callable highlight has no pointer hint')
+  s:event({ "hl_attr_define", { 81, {}, {}, { { kind = "syntax", hi_name = name } } } })
+  T.eq(s:take_batch()[1].define["81"].definition, nil, "non-callable highlight has no pointer hint")
 end
 
 do
   local s = Redraw.new()
-  s:event({ 'hl_attr_define', { 82, { bold = true }, {}, { { kind = 'ui', ui_name = 'FloatTitle' } } } })
-  T.eq(s:take_batch()[1].define['82'].ui_font, true, 'popup titles request native UI typography')
+  s:event({
+    "hl_attr_define",
+    { 82, { bold = true }, {}, { { kind = "ui", ui_name = "FloatTitle" } } },
+  })
+  T.eq(s:take_batch()[1].define["82"].ui_font, true, "popup titles request native UI typography")
 end

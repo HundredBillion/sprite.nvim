@@ -257,37 +257,37 @@ function start_editor(cols, rows)
     end
     rpc:feed(data)
   end)
-  rpc:request(
-    "nvim_ui_attach",
-    { cols, rows, { rgb = true, ext_hlstate = true, ext_linegrid = true, ext_tabline = native_tabs } },
-    function(err)
-      if err ~= nil and err ~= vim.NIL then
-        Log.write("attach", "nvim_ui_attach failed: " .. vim.inspect(err))
-        -- The editor is spawned but will not draw; end the session like a
-        -- refusal so the person is not left with a blank Surface.
-        sprite_gone("attach failed")
-      else
-        Log.trace("attach", "nvim_ui_attach ok")
-        if native_tabs then
-          rpc:request("nvim_get_api_info", {}, function(api_err, info)
-            if api_err ~= nil and api_err ~= vim.NIL then
-              disable_tabs(vim.inspect(api_err))
-              return
-            end
-            rpc:request(
-              "nvim_exec_lua",
-              { "require('sprite.tabs').attach(...)", { info[1] } },
-              function(tab_err)
-                if tab_err ~= nil and tab_err ~= vim.NIL then
-                  disable_tabs(vim.inspect(tab_err))
-                end
+  rpc:request("nvim_ui_attach", {
+    cols,
+    rows,
+    { rgb = true, ext_hlstate = true, ext_linegrid = true, ext_tabline = native_tabs },
+  }, function(err)
+    if err ~= nil and err ~= vim.NIL then
+      Log.write("attach", "nvim_ui_attach failed: " .. vim.inspect(err))
+      -- The editor is spawned but will not draw; end the session like a
+      -- refusal so the person is not left with a blank Surface.
+      sprite_gone("attach failed")
+    else
+      Log.trace("attach", "nvim_ui_attach ok")
+      if native_tabs then
+        rpc:request("nvim_get_api_info", {}, function(api_err, info)
+          if api_err ~= nil and api_err ~= vim.NIL then
+            disable_tabs(vim.inspect(api_err))
+            return
+          end
+          rpc:request(
+            "nvim_exec_lua",
+            { "require('sprite.tabs').attach(...)", { info[1] } },
+            function(tab_err)
+              if tab_err ~= nil and tab_err ~= vim.NIL then
+                disable_tabs(vim.inspect(tab_err))
               end
-            )
-          end)
-        end
+            end
+          )
+        end)
       end
     end
-  )
+  end)
 end
 
 -- Read the socket: split newline-delimited JSON, decode, dispatch.
