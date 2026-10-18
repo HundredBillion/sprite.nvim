@@ -151,6 +151,26 @@ local function grid_op(op)
       end
     end
     return true
+  elseif op.type == "tabs" then
+    if
+      not integer(op.revision)
+      or op.revision < 1
+      or not vim.islist(op.items)
+      or #op.items > 256
+    then
+      return nil, "invalid tabs"
+    end
+    local ids = {}
+    for _, item in ipairs(op.items) do
+      if type(item.id) ~= "string" or ids[item.id] or not label(item.label) then
+        return nil, "invalid tab"
+      end
+      ids[item.id] = true
+    end
+    if op.active ~= vim.NIL and op.active ~= nil and not ids[op.active] then
+      return nil, "invalid active"
+    end
+    return true
   elseif op.type == "clear" then
     return true
   else
@@ -200,6 +220,8 @@ function M.validate(message, state)
       return nil, "invalid border_side"
     end
     remember_row_height(state, message.description)
+  elseif message.type == "tabs" then
+    return grid_op(message)
   elseif message.type == "batch" then
     if not vim.islist(message.ops) then
       return nil, "batch needs ops"
@@ -397,7 +419,7 @@ function M.serve(path, opts)
               limits = {},
             })
           else
-            self.send({ type = "opened", surface = opts.surface or 1 })
+            self.send({ type = "opened", surface = opts.surface or 1, features = opts.features })
             self.send({ type = "resize", width = 640, height = 384, cols = 80, rows = 24 })
           end
         else

@@ -32,6 +32,8 @@ local rpc -- the RPC client to the editor
 local translator = Redraw.new()
 local attached = false
 local surface
+local native_tabs = false
+local refresh_tabs
 
 -- The stdin-drain handle. Only live once the Surface path is committed (after
 -- the handshake's `opened` verdict); `fail_open` must tear it down before
@@ -93,6 +95,49 @@ local function sock_send(obj)
   sock:write(line .. "\n")
 end
 
+local tabs_pending, tabs_dirty = false, false
+local tabs_revision = 0
+local function disable_tabs(reason)
+  Log.write("tabs", tostring(reason))
+  native_tabs = false
+  if tabs_revision > 0 then
+    sock_send({ type = "tabs", revision = tabs_revision + 1, items = {}, active = vim.NIL })
+  end
+  rpc:notify("nvim_ui_set_option", { "ext_tabline", false })
+end
+refresh_tabs = function()
+  if not native_tabs or not rpc then
+    return
+  end
+  if tabs_pending then
+    tabs_dirty = true
+    return
+  end
+  tabs_pending = true
+  rpc:request(
+    "nvim_exec_lua",
+    { "return require('sprite.tabs').snapshot()", {} },
+    function(err, result)
+      tabs_pending = false
+      if not native_tabs then
+        return
+      end
+      if err ~= nil and err ~= vim.NIL then
+        disable_tabs(vim.inspect(err))
+        return
+      end
+      if type(result) == "table" and result.type == "tabs" then
+        tabs_revision = result.revision
+        sock_send(result)
+      end
+      if tabs_dirty then
+        tabs_dirty = false
+        refresh_tabs()
+      end
+    end
+  )
+end
+
 -- Everything the editor draws between one flush and the next, as one batch.
 local function on_flush()
   local ops = translator:take_batch()
@@ -104,7 +149,9 @@ end
 -- One redraw notification carries many events; translate each, flush at the end.
 local function on_redraw(_, events)
   for _, event in ipairs(events) do
-    if event[1] == "flush" then
+    if event[1] == "tabline_update" then
+      refresh_tabs()
+    elseif event[1] == "flush" then
       on_flush()
     else
       translator:event(event)
@@ -148,6 +195,20 @@ local function on_surface_event(event)
     sprite_gone(t)
     return
   end
+  if t == "tab_action" then
+    if native_tabs and rpc then
+      rpc:request(
+        "nvim_exec_lua",
+        { "return require('sprite.tabs').dispatch(...) ", { event } },
+        function(err)
+          if err ~= nil and err ~= vim.NIL then
+            Log.write("tabs", vim.inspect(err))
+          end
+        end
+      )
+    end
+    return
+  end
   local call = Input.call(event)
   if call and rpc then
     rpc:notify(call.method, call.args)
@@ -186,6 +247,8 @@ function start_editor(cols, rows)
   rpc:on_notification(function(method, args)
     if method == "redraw" then
       on_redraw(method, args)
+    elseif method == "sprite_tabs_changed" then
+      refresh_tabs()
     end
   end)
   eout:read_start(function(err, data)
@@ -194,7 +257,11 @@ function start_editor(cols, rows)
     end
     rpc:feed(data)
   end)
-  rpc:request("nvim_ui_attach", { cols, rows, { rgb = true, ext_linegrid = true } }, function(err)
+  rpc:request("nvim_ui_attach", {
+    cols,
+    rows,
+    { rgb = true, ext_hlstate = true, ext_linegrid = true, ext_tabline = native_tabs },
+  }, function(err)
     if err ~= nil and err ~= vim.NIL then
       Log.write("attach", "nvim_ui_attach failed: " .. vim.inspect(err))
       -- The editor is spawned but will not draw; end the session like a
@@ -202,6 +269,23 @@ function start_editor(cols, rows)
       sprite_gone("attach failed")
     else
       Log.trace("attach", "nvim_ui_attach ok")
+      if native_tabs then
+        rpc:request("nvim_get_api_info", {}, function(api_err, info)
+          if api_err ~= nil and api_err ~= vim.NIL then
+            disable_tabs(vim.inspect(api_err))
+            return
+          end
+          rpc:request(
+            "nvim_exec_lua",
+            { "require('sprite.tabs').attach(...)", { info[1] } },
+            function(tab_err)
+              if tab_err ~= nil and tab_err ~= vim.NIL then
+                disable_tabs(vim.inspect(tab_err))
+              end
+            end
+          )
+        end)
+      end
     end
   end)
 end
@@ -300,6 +384,11 @@ local function connect()
       if not (ok and type(verdict) == "table" and verdict.type == "opened") then
         fail_open("open refused: " .. line)
         return
+      end
+      for _, feature in ipairs(verdict.features or {}) do
+        if feature == "grid-tabs-v1" then
+          native_tabs = true
+        end
       end
       surface = verdict.surface
       if

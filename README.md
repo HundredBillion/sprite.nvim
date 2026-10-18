@@ -40,10 +40,30 @@ Install the Lua API in ordinary Neovim with lazy.nvim:
 }
 ```
 
-The API loads in any Neovim 0.11 or later. `require("sprite").available(callback)`
-reports whether this editor is in an eligible Sprite pane; plugins can use
-their ordinary Neovim view when it is unavailable. A Sprite checkout and a
-special setup function are not required for consumers.
+The API loads in any Neovim 0.11 or later. When opening a dock, call
+`sprite.open(opts, callback)` directly:
+
+```lua
+local sprite = require("sprite")
+
+sprite.open({
+  side = "left",
+  width = 300,
+  description = description,
+}, function(err, dock)
+  if err then
+    -- Keep using the plugin's ordinary Neovim view.
+    return
+  end
+  -- Use the opened dock.
+end)
+```
+
+`open` waits for the current UI context and checks native dock capability and
+eligibility itself. A preceding `sprite.available(callback)` repeats that
+discovery, so use `available` only when checking whether this editor is in an
+eligible Sprite pane without opening a dock. A Sprite checkout and a special
+setup function are not required for consumers.
 
 To launch the editor through Sprite's grid presentation from this checkout, run:
 
@@ -65,3 +85,25 @@ plugin against Sprite's committed protocol fixture from a local Sprite
 checkout, run `SPRITE_SOURCE=/path/to/Sprite sh scripts/test-protocol.sh`.
 The protocol integration command requires `SPRITE_SOURCE` and exits with an
 error if it is missing.
+
+Native file tabs are enabled automatically when the grid host advertises
+`grid-tabs-v1`. Older Sprite versions and ordinary terminals retain Neovim's
+normal tabline. The native strip is 35 pixels tall and supports file selection,
+close actions, modified markers, and optional inline SVG icons.
+
+Distros can configure `require('sprite.tabs').setup` with `snapshot`, `select`,
+and `close` callbacks. `snapshot()` returns `{ items, active, height, colors }`;
+`height` is optional and defaults to the host's tab height (35 pixels in Sprite).
+Set it to a value from 24 to 64 to request a different height;
+each item has a Neovim `buffer` number, `label`, `modified`, and optional SVG
+source in `icon`. `active` is a buffer number. `select(buffer)` and
+`close(buffer)` run inside Neovim; the distro should preserve unsaved work when
+closing. The bridge assigns IDs/revisions, rejects stale clicks, limits visible
+items to 256 around the active buffer, bounds icon payloads, and coalesces
+unchanged updates. A provider error restores the ordinary tabline.
+
+On Sprite builds with definition-pointer support, holding Cmd/Super over a
+highlighted function or method shows a pointing hand. The adapter requests
+Neovim's highlight metadata and forwards an optional `definition` hint on the
+highlight attributes. Older hosts ignore this hint. The hint indicates a
+navigation action; the language server still resolves the destination on click.
