@@ -35,5 +35,9 @@ T.eq(
 for name, value in pairs(saved) do
   vim.o[name] = value
 end
-vim.api.nvim_set_current_buf(previous_buffer)
+if vim.api.nvim_buf_is_valid(previous_buffer) then
+  vim.api.nvim_set_current_buf(previous_buffer)
+else
+  vim.cmd.enew()
+end
 vim.api.nvim_buf_delete(fixture, { force = true })

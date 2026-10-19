@@ -1,4 +1,13 @@
 # sprite.nvim
+
+Native Markdown providers can register with `require('sprite.markdown').setup`
+using `next`, `dispatch`, `before_input`, `attached`, and `stop` callbacks.
+The adapter enables them only when the host negotiates `grid-markdown-v1`.
+`next` yields document/state operations; the bridge assigns revisions and
+validates returned toolbar actions before dispatch. `before_input` returns
+false to consume preview edits and paste, preserving ordinary command input.
+Call `changed()` when a new operation is ready. Detached and older hosts keep
+the normal editor grid and input behavior.
 Neovim plugin that draws Neovim through Sprite's native Surfaces
 
 ## The editor adapter

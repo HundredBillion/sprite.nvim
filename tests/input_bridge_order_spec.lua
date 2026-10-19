@@ -8,7 +8,7 @@ local function session()
   local bridge = Bridge.new(rpc)
   local function reply(index, value, err)
     local message = assert(messages[index])
-    rpc:feed(vim.mpack.encode({ 1, message[2], err or vim.NIL, value or vim.NIL }))
+    rpc:feed(vim.mpack.encode({ 1, message[2], err or vim.NIL, value == nil and vim.NIL or value }))
   end
   local function keys()
     local result = {}
@@ -90,3 +90,10 @@ T.eq(
   { { method = "nvim_input", args = { "e" } } },
   "hook acknowledgment still releases key after mode error"
 )
+
+local consumed, consume, consumed_reply, consumed_keys = session()
+consume("x")
+consumed_reply(1, false)
+consumed_reply(2, { blocking = true })
+T.eq(consumed_keys(), {}, "consumed input cannot be released by a later mode sample")
+consumed.close()
