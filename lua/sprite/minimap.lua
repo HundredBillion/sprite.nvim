@@ -4,6 +4,7 @@ local revision = 0
 local committed, staging
 local hide, pending = false, false
 local attachment = 0
+local action_ack = false
 
 function M.changed()
   if channel and not pending then
@@ -54,7 +55,8 @@ function M.setup(options)
   M.changed()
 end
 
-function M.attach(id)
+function M.attach(id, acknowledgments)
+  action_ack = acknowledgments == true
   if id == vim.NIL then
     id = nil
   end
@@ -100,7 +102,13 @@ function M.pull()
   revision = revision + 1
   op.type, op.revision = "minimap", revision
   if op.kind == "begin" then
-    staging = { target = op.target, generation = op.generation, total = op.total }
+    op.action_ack = action_ack and provider.acknowledge_actions == true or nil
+    staging = {
+      target = op.target,
+      generation = op.generation,
+      total = op.total,
+      action_ack = op.action_ack,
+    }
   elseif op.kind == "commit" and staging then
     committed = staging
     staging = nil
@@ -144,7 +152,11 @@ function M.dispatch(event)
     revision = true,
     action = true,
     [coordinate] = true,
+    action_id = true,
   }
+  if event.action_id ~= nil and (not committed.action_ack or not integer(event.action_id)) then
+    return false
+  end
   for key in pairs(event) do
     if not fields[key] then
       return false

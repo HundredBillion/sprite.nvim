@@ -166,3 +166,54 @@ T.eq(
 T.eq(count, 1)
 bridge.setup(nil)
 bridge.pull()
+
+for _, host_ack in ipairs({ false, true }) do
+  for _, provider_ack in ipairs({ false, true }) do
+    local step = 0
+    local seen
+    bridge.setup({
+      acknowledge_actions = provider_ack,
+      next = function()
+        step = step + 1
+        return vim.deepcopy(fixture.valid[step])
+      end,
+      dispatch = function(event)
+        seen = event
+        return true
+      end,
+      stop = function() end,
+    })
+    bridge.attach(nil, host_ack)
+    local begin = bridge.pull()
+    if begin.kind == "hide" then
+      begin = bridge.pull()
+    end
+    T.eq(
+      begin.action_ack,
+      host_ack and provider_ack or nil,
+      "action acknowledgments require host and provider opt-in"
+    )
+    local commit
+    repeat
+      commit = bridge.pull()
+    until commit.kind == "commit"
+    local action = {
+      type = "minimap_action",
+      target = commit.target,
+      generation = commit.generation,
+      revision = commit.revision,
+      action = "scroll",
+      topline = 1,
+      action_id = 17,
+    }
+    T.eq(bridge.dispatch(action), host_ack and provider_ack, "unnegotiated action id rejected")
+    if host_ack and provider_ack then
+      T.eq(seen.action_id, 17)
+      action.action_id = 0
+      T.eq(bridge.dispatch(action), false)
+      action.action_id = 9007199254740992
+      T.eq(bridge.dispatch(action), false)
+    end
+    bridge.setup(nil)
+  end
+end

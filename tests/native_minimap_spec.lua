@@ -428,14 +428,30 @@ end
 T.ok(seen_hide, "refusal clears staged source with hide")
 T.eq(stale_after_hide, false, "no source response follows refusal hide")
 local stops = #vim.fn.readfile(stopped_file)
-local minimap_count=0
-for _,m in ipairs(messages) do if m.type=='minimap' then minimap_count=minimap_count+1 end end
-for _=1,3 do restart.send({type='refused',reason='malformed: invalid minimap operation'}) end
-vim.wait(200,function() return false end,10)
-local after_count=0
-for _,m in ipairs(messages) do if m.type=='minimap' then after_count=after_count+1 end end
-T.eq(after_count,minimap_count,'repeated protocol refusals do not restart or pull the same source')
-T.eq(#vim.fn.readfile(stopped_file),stops,'repeated refusals leave the provider stopped')
+local minimap_count = 0
+for _, m in ipairs(messages) do
+  if m.type == "minimap" then
+    minimap_count = minimap_count + 1
+  end
+end
+for _ = 1, 3 do
+  restart.send({ type = "refused", reason = "malformed: invalid minimap operation" })
+end
+vim.wait(200, function()
+  return false
+end, 10)
+local after_count = 0
+for _, m in ipairs(messages) do
+  if m.type == "minimap" then
+    after_count = after_count + 1
+  end
+end
+T.eq(
+  after_count,
+  minimap_count,
+  "repeated protocol refusals do not restart or pull the same source"
+)
+T.eq(#vim.fn.readfile(stopped_file), stops, "repeated refusals leave the provider stopped")
 restart.send({ type = "refused", reason = "invalid cursor" })
 command(restart, "file tabs-still-live.lua")
 T.ok(
@@ -659,3 +675,62 @@ T.eq(
 T.eq(ui_host.invalid, nil)
 close_ui()
 vim.fn.delete(ui_observed)
+
+-- Exercise companion capability propagation through the actual adapter process.
+do
+  local code = string.format(
+    [[
+local f=vim.json.decode(table.concat(vim.fn.readfile(%q),'\n'))
+local index,ack=0,nil
+require('sprite.minimap').setup({acknowledge_actions=true,next=function()
+ if ack then local value=vim.deepcopy(f.valid[4]);value.action_id=ack;ack=nil;return value end
+ index=index+1;if index<=4 then return vim.deepcopy(f.valid[index]) end
+end,dispatch=function(event) ack=event.action_id;require('sprite.minimap').changed();return true end,stop=function() end})
+]],
+    root .. "/tests/fixtures/minimap-v1.json"
+  )
+  local host, messages, close =
+    launch("action-ack", { "grid-minimap-v1", "grid-minimap-ack-v1" }, code)
+  T.ok(
+    vim.wait(5000, function()
+      for _, m in ipairs(messages) do
+        if m.kind == "state" then
+          return true
+        end
+      end
+    end, 10),
+    "ack-capable actual adapter initializes"
+  )
+  local commit
+  local begin
+  for _, m in ipairs(messages) do
+    if m.kind == "commit" then
+      commit = m
+    elseif m.kind == "begin" then
+      begin = m
+    end
+  end
+  T.eq(begin and begin.action_ack, true, "adapter forwards companion capability to bridge")
+  if commit then
+    host.send({
+      type = "minimap_action",
+      revision = commit.revision,
+      target = commit.target,
+      generation = commit.generation,
+      action = "scroll",
+      topline = 1,
+      action_id = 41,
+    })
+    T.ok(
+      vim.wait(5000, function()
+        for _, m in ipairs(messages) do
+          if m.kind == "state" and m.action_id == 41 then
+            return true
+          end
+        end
+      end, 10),
+      "processed action id crosses actual adapter both directions"
+    )
+  end
+  close()
+end

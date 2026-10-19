@@ -35,6 +35,7 @@ local surface
 local native_tabs = false
 local refresh_tabs
 local native_minimap = false
+local minimap_action_ack = false
 local refresh_minimap
 local minimap_channel
 local minimap_pending, minimap_dirty = false, false
@@ -156,25 +157,17 @@ local function continue_minimap()
   end)
 end
 
-local function reset_minimap(reason, restart)
+local function reset_minimap(reason)
   Log.write("minimap", tostring(reason))
   minimap_epoch = minimap_epoch + 1
-  minimap_dirty = restart
-  if not restart then
-    native_minimap = false
-    if minimap_revision > 0 and not hangup then
-      minimap_revision = minimap_revision + 1
-      sock_send({ type = "minimap", kind = "hide", revision = minimap_revision })
-    end
+  minimap_dirty = false
+  native_minimap = false
+  if minimap_revision > 0 and not hangup then
+    minimap_revision = minimap_revision + 1
+    sock_send({ type = "minimap", kind = "hide", revision = minimap_revision })
   end
   if rpc then
-    rpc:notify("nvim_exec_lua", {
-      "require('sprite.minimap').attach(...)",
-      { restart and minimap_channel or vim.NIL },
-    })
-  end
-  if restart then
-    continue_minimap()
+    rpc:notify("nvim_exec_lua", { "require('sprite.minimap').attach(...)", { vim.NIL } })
   end
 end
 
@@ -202,7 +195,7 @@ refresh_minimap = function()
         return
       end
       if err ~= nil and err ~= vim.NIL then
-        reset_minimap(vim.inspect(err), false)
+        reset_minimap(vim.inspect(err))
         return
       end
       if type(result) == "table" and result.type == "minimap" then
@@ -290,7 +283,7 @@ local function on_surface_event(event)
     Log.write("refused", event.reason or "")
     -- The host currently identifies minimap refusals only by this exact reason.
     if native_minimap and event.reason == "malformed: invalid minimap operation" then
-      reset_minimap(event.reason, false)
+      reset_minimap(event.reason)
     end
     return
   end
@@ -405,7 +398,7 @@ function start_editor(cols, rows)
               disable_tabs(vim.inspect(api_err))
             end
             if native_minimap then
-              reset_minimap(vim.inspect(api_err), false)
+              reset_minimap(vim.inspect(api_err))
             end
             return
           end
@@ -424,10 +417,10 @@ function start_editor(cols, rows)
             minimap_channel = info[1]
             rpc:request(
               "nvim_exec_lua",
-              { "require('sprite.minimap').attach(...)", { info[1] } },
+              { "require('sprite.minimap').attach(...)", { info[1], minimap_action_ack } },
               function(err)
                 if err ~= nil and err ~= vim.NIL then
-                  reset_minimap(vim.inspect(err), false)
+                  reset_minimap(vim.inspect(err))
                 else
                   refresh_minimap()
                 end
@@ -538,6 +531,8 @@ local function connect()
       for _, feature in ipairs(verdict.features or {}) do
         if feature == "grid-tabs-v1" then
           native_tabs = true
+        elseif feature == "grid-minimap-ack-v1" then
+          minimap_action_ack = true
         elseif feature == "grid-minimap-v1" then
           native_minimap = true
         end
