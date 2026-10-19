@@ -139,6 +139,16 @@ editors without a provider start no minimap source jobs.
 The optional real-provider adapter checks run when a sibling `VSVim` checkout
 is present, or when `VSVIM_SOURCE=/path/to/VSVim` names that checkout.
 
+### Reordering native file tabs
+
+A tab provider can opt into drag-to-reorder with a `reorder(buffer, before)`
+callback in `require('sprite.tabs').setup`. `buffer` is the buffer to move;
+`before` is the destination buffer, or nil to append. Return false for a rejected
+or unchanged move. The provider owns the order and returns it in subsequent
+snapshots. The adapter validates the revision and both stable IDs, advertises
+`reorderable` only when the callback exists, and keeps the active file unchanged.
+Older hosts retain their existing tab controls.
+
 ### Full-width statusline
 
 Hosts advertising `grid-footer-v1` draw a global statusline (`laststatus=3`)

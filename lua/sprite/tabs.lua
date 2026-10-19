@@ -109,6 +109,7 @@ function M.snapshot()
   end
   local result = {
     type = "tabs",
+    reorderable = type(provider.reorder) == "function",
     items = items,
     active = active or vim.NIL,
     colors = state.colors,
@@ -139,6 +140,23 @@ function M.dispatch(event)
       provider.select(b)
     else
       vim.api.nvim_set_current_buf(b)
+    end
+  elseif event.action == "reorder" then
+    if type(provider.reorder) ~= "function" then
+      return false
+    end
+    local before
+    if event.before ~= vim.NIL then
+      if type(event.before) ~= "string" then
+        return false
+      end
+      before = targets[event.before]
+      if not before or not vim.api.nvim_buf_is_valid(before) then
+        return false
+      end
+    end
+    if before == b or provider.reorder(b, before) == false then
+      return false
     end
   elseif event.action == "close" then
     if provider.close then

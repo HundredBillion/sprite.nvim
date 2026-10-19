@@ -164,6 +164,7 @@ local function grid_op(op)
       not integer(op.revision)
       or op.revision < 1
       or not vim.islist(op.items)
+      or op.reorderable ~= nil and type(op.reorderable) ~= "boolean"
       or #op.items > 256
     then
       return nil, "invalid tabs"
