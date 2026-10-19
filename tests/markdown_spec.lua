@@ -1,37 +1,9 @@
 local Markdown = require("sprite.markdown")
 local calls, attached = {}, {}
-local queued = {
-  {
-    kind = "document",
-    buffer = 1,
-    generation = 3,
-    path = "/project/README.md",
-    text = "# Hello\n",
-  },
-  {
-    kind = "state",
-    active = 1000,
-    windows = {
-      {
-        window = 1000,
-        buffer = 1,
-        generation = 3,
-        preview = true,
-        row = 0,
-        column = 0,
-        width = 80,
-        height = 20,
-      },
-    },
-    colors = {
-      background = "#1e1f22",
-      foreground = "#bcbec4",
-      muted = "#9da0a8",
-      accent = "#589df6",
-      code = "#2b2d30",
-    },
-  },
-}
+local fixture = vim.json.decode(
+  table.concat(vim.fn.readfile(vim.fn.getcwd() .. "/tests/fixtures/native-markdown-v1.json"), "\n")
+)
+local queued = { vim.deepcopy(fixture.document), vim.deepcopy(fixture.state) }
 Markdown.setup({
   next = function()
     return table.remove(queued, 1)

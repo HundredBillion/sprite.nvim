@@ -118,7 +118,7 @@ function M.dispatch(event)
     or type(event) ~= "table"
     or event.type ~= "markdown_action"
     or event.revision ~= state.revision
-    or (event.action ~= "toggle" and event.action ~= "open")
+    or (event.action ~= "toggle" and event.action ~= "open" and event.action ~= "focus")
   then
     return false
   end
