@@ -138,3 +138,26 @@ editors without a provider start no minimap source jobs.
 
 The optional real-provider adapter checks run when a sibling `VSVim` checkout
 is present, or when `VSVIM_SOURCE=/path/to/VSVim` names that checkout.
+
+### Reordering native file tabs
+
+A tab provider can opt into drag-to-reorder with a `reorder(buffer, before)`
+callback in `require('sprite.tabs').setup`. `buffer` is the buffer to move;
+`before` is the destination buffer, or nil to append. Return false for a rejected
+or unchanged move. The provider owns the order and returns it in subsequent
+snapshots. The adapter validates the revision and both stable IDs, advertises
+`reorderable` only when the callback exists, and keeps the active file unchanged.
+Older hosts retain their existing tab controls.
+
+### Full-width statusline
+
+Hosts advertising `grid-footer-v1` draw a global statusline (`laststatus=3`)
+across the editor and native minimap. The adapter evaluates the existing
+`statusline` option at the host's full width, retaining its highlights and
+alignment. Commands, messages, and popup content can cover the statusline row.
+Window-local statuslines and older hosts retain the ordinary grid presentation.
+
+The implementation uses Neovim's
+[`nvim_eval_statusline`](https://neovim.io/doc/user/api.html#nvim_eval_statusline())
+with `maxwidth` and `highlights`; highlight byte offsets identify each styled
+run, and stacked highlight groups are applied in priority order.

@@ -35,6 +35,10 @@ local translator = Redraw.new()
 local attached = false
 local surface
 local native_tabs = false
+local native_footer = false
+local footer_columns = 80
+local footer_pending, footer_dirty = false, false
+local previous_footer
 local refresh_tabs
 local native_minimap = false
 local minimap_action_ack = false
@@ -212,11 +216,43 @@ refresh_minimap = function()
 end
 
 -- Everything the editor draws between one flush and the next, as one batch.
+local function refresh_footer()
+  if not native_footer or not rpc or hangup then
+    return
+  end
+  if footer_pending then
+    footer_dirty = true
+    return
+  end
+  footer_pending, footer_dirty = true, false
+  rpc:request("nvim_exec_lua", {
+    "return require('sprite.statusline').snapshot(...)",
+    { footer_columns },
+  }, function(err, result)
+    footer_pending = false
+    if hangup then
+      return
+    end
+    if err ~= nil and err ~= vim.NIL then
+      Log.write("footer", vim.inspect(err))
+      result = { type = "footer", visible = false }
+    end
+    if type(result) == "table" and not vim.deep_equal(previous_footer, result) then
+      previous_footer = result
+      sock_send(result)
+    end
+    if footer_dirty then
+      refresh_footer()
+    end
+  end)
+end
+
 local function on_flush()
   local ops = translator:take_batch()
   if ops then
     sock_send({ type = "batch", ops = ops })
   end
+  refresh_footer()
 end
 
 -- One redraw notification carries many events; translate each, flush at the end.
@@ -273,6 +309,9 @@ local function on_surface_event(event)
     return
   end
   local t = event.type
+  if t == "resize" then
+    footer_columns = event.footer_cols or event.cols
+  end
   if t == "resize" and not attached then
     -- The first resize carries the real grid size; attach the editor to it.
     start_editor(event.cols, event.rows)
@@ -334,6 +373,9 @@ local function on_surface_event(event)
       input_bridge.input(call, hook)
     else
       rpc:notify(call.method, call.args)
+      if t == "resize" then
+        refresh_footer()
+      end
     end
   elseif t == "input" and event.key then
     Log.write("dropkey", event.key)
@@ -537,6 +579,8 @@ local function connect()
       for _, feature in ipairs(verdict.features or {}) do
         if feature == "grid-tabs-v1" then
           native_tabs = true
+        elseif feature == "grid-footer-v1" then
+          native_footer = true
         elseif feature == "grid-minimap-ack-v1" then
           minimap_action_ack = true
         elseif feature == "grid-minimap-v1" then
