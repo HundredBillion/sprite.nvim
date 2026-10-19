@@ -151,6 +151,14 @@ local function grid_op(op)
       end
     end
     return true
+  elseif op.type == "footer" then
+    if op.visible == false then
+      return true
+    end
+    if not grid_index(op.row) or not bounded(op.cols, 1, 1024) then
+      return nil, "invalid footer size"
+    end
+    return grid_op({ type = "rows", rows = { { row = 0, cells = op.cells } } })
   elseif op.type == "tabs" then
     if
       not integer(op.revision)
