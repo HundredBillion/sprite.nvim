@@ -497,3 +497,75 @@ command(quit, "qa!")
 T.ok(wait_file(quit_stops), "normal editor exit stops provider")
 close_quit()
 vim.fn.delete(quit_stops)
+
+local pulling, actions, settled = vim.fn.tempname(), vim.fn.tempname(), vim.fn.tempname()
+local watermark_host, watermark_messages, close_watermark = launch(
+  "forwarded-watermark",
+  { "grid-minimap-v1" },
+  string.format(
+    [[
+local n=0
+local fixture=vim.json.decode(table.concat(vim.fn.readfile(%q),'\n'))
+require('sprite.minimap').setup({next=function()
+  n=n+1
+  if n<=4 then return fixture.valid[n] end
+  if n==5 then
+    vim.fn.writefile({'pulling'},%q)
+    vim.uv.sleep(300)
+    return fixture.valid[4]
+  end
+end,dispatch=function(event) vim.fn.writefile({tostring(event.revision)},%q,'a'); return true end,
+ before_input=function() end,stop=function() end})
+]],
+    root .. "/tests/fixtures/minimap-v1.json",
+    pulling,
+    actions
+  )
+)
+T.ok(wait_file(pulling), "state pull is outstanding before future pointer action")
+local captured
+for _, message in ipairs(watermark_messages) do
+  if message.type == "minimap" and message.kind == "state" then
+    captured = message
+  end
+end
+T.ok(captured ~= nil, "pointer captures an actually forwarded state")
+if captured then
+  local action = {
+    type = "minimap_action",
+    target = captured.target,
+    generation = captured.generation,
+    revision = captured.revision + 1,
+    action = "scroll",
+    topline = 2,
+  }
+  watermark_host.send(action)
+  action.revision = captured.revision
+  watermark_host.send(action)
+  T.ok(
+    vim.wait(3000, function()
+      for _, message in ipairs(watermark_messages) do
+        if message.type == "minimap" and message.revision > captured.revision then
+          return true
+        end
+      end
+    end, 10),
+    "delayed state response is eventually forwarded"
+  )
+  watermark_host.send(action)
+  command(
+    watermark_host,
+    "lua vim.fn.writefile({'settled'}, " .. string.format("%q", settled) .. ")"
+  )
+  T.ok(wait_file(settled), "ordered RPC stream drains pointer actions")
+  T.eq(
+    vim.fn.filereadable(actions) == 1 and vim.fn.readfile(actions) or {},
+    { tostring(captured.revision), tostring(captured.revision) },
+    "future action never dispatches; captured drag revision remains valid across state progress"
+  )
+end
+T.eq(watermark_host.invalid, nil)
+close_watermark()
+for _, path in ipairs({ pulling, actions, settled }) do
+  vim.fn.delete(path)
+end

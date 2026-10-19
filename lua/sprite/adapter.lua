@@ -299,7 +299,12 @@ local function on_surface_event(event)
     return
   end
   if t == "minimap_action" then
-    if native_minimap and rpc then
+    if
+      native_minimap
+      and rpc
+      and type(event.revision) == "number"
+      and event.revision <= minimap_revision
+    then
       rpc:notify("nvim_exec_lua", { "return require('sprite.minimap').dispatch(...)", { event } })
     end
     return
