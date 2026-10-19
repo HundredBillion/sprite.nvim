@@ -107,3 +107,22 @@ highlighted function or method shows a pointing hand. The adapter requests
 Neovim's highlight metadata and forwards an optional `definition` hint on the
 highlight attributes. Older hosts ignore this hint. The hint indicates a
 navigation action; the language server still resolves the destination on click.
+
+A native minimap is used only when the host advertises `grid-minimap-v1` and
+an editor integration registers `require('sprite.minimap').setup(provider)`.
+The provider supplies `next()`, `dispatch(event)`, `before_input(event)`, and
+`stop()`. `next()` returns one source transaction or lightweight state operation,
+without a revision, or nil when no work is ready. Call `changed()` when more work
+is available. The bridge assigns connection revisions and rejects stale actions;
+the adapter yields between source chunks and never reloads source for scrolling.
+
+`before_input(event)` runs synchronously before the original input API call,
+so a provider can restore a preserved selection before copy, cut, or paste.
+Input keys are normalized Neovim key text; paste, mouse, focus, and resize keep
+their event types. `stop()` releases source jobs on replacement, restart, and
+Surface teardown. Provider failures hide the minimap and are recorded in the
+adapter log while ordinary editing and native tabs continue. Older hosts and
+editors without a provider start no minimap source jobs.
+
+The optional real-provider adapter checks run when a sibling `VSVim` checkout
+is present, or when `VSVIM_SOURCE=/path/to/VSVim` names that checkout.
