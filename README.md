@@ -107,3 +107,34 @@ highlighted function or method shows a pointing hand. The adapter requests
 Neovim's highlight metadata and forwards an optional `definition` hint on the
 highlight attributes. Older hosts ignore this hint. The hint indicates a
 navigation action; the language server still resolves the destination on click.
+
+A native minimap is used only when the host advertises `grid-minimap-v1` and
+an editor integration registers `require('sprite.minimap').setup(provider)`.
+The provider supplies `next()`, `dispatch(event)`, `before_input(event)`, and
+`stop()`. `next()` returns one source transaction or lightweight state operation,
+without a revision, or nil when no work is ready. Call `changed()` when more work
+is available. The bridge assigns connection revisions and rejects stale actions;
+the adapter yields between source chunks and never reloads source for scrolling.
+
+`before_input(event)` restores a preserved selection before the original input
+resolves its Normal or Visual mapping, including copy, cut, and paste. The
+adapter requests the hook separately from native input so continuation keys
+(replace, find, mapping prefixes, and input readers) can reach a blocked editor.
+During a modal wait, fast keyboard and mouse input retain Neovim's native
+priority over deferred minimap/tab actions. A mode reply detects a wait; it does
+not acknowledge that an earlier key has been consumed. Paste keeps Neovim's
+deferred API behavior. Navigation waits for outstanding restoration hooks, so a
+late hook cannot restore a selection created by newer navigation.
+
+The hook must only resume or clear selection state created by `dispatch()`;
+it must not create new saved selections or require execution during a modal
+input wait.
+Input keys are normalized Neovim key text; paste and mouse keep their event
+types. Resize, focus, and blur use direct RPC because Neovim exposes those UI
+methods only over RPC. `stop()` releases source jobs on replacement, restart, and
+Surface teardown. Provider failures hide the minimap and are recorded in the
+adapter log while ordinary editing and native tabs continue. Older hosts and
+editors without a provider start no minimap source jobs.
+
+The optional real-provider adapter checks run when a sibling `VSVim` checkout
+is present, or when `VSVIM_SOURCE=/path/to/VSVim` names that checkout.

@@ -17,7 +17,14 @@ jobs:
         with:
           neovim: true
           version: ${{ matrix.nvim }}
+      - uses: actions/checkout@v4
+        with:
+          repository: HundredBillion/VSVim
+          ref: 18948648ae0238d95d58fbe74fea011b9be47e40
+          path: .test/vsvim
       - name: Tests
+        env:
+          VSVIM_SOURCE: ${{ github.workspace }}/.test/vsvim
         run: nvim -l tests/run.lua
   format:
     runs-on: ubuntu-latest

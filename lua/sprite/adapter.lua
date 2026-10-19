@@ -6,6 +6,7 @@ local here = vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":h")
 local Rpc = dofile(here .. "/rpc.lua")
 local Redraw = dofile(here .. "/redraw.lua")
 local Input = dofile(here .. "/input.lua")
+local InputBridge = dofile(here .. "/input_bridge.lua")
 local Log = dofile(here .. "/log.lua")
 local Session = dofile(here .. "/session.lua")
 local repo = vim.fn.fnamemodify(here, ":h:h")
@@ -29,11 +30,19 @@ local editor_exit -- its code, once known
 -- the 129 the top-level exit must return.
 local hangup = false
 local rpc -- the RPC client to the editor
+local input_bridge
 local translator = Redraw.new()
 local attached = false
 local surface
 local native_tabs = false
 local refresh_tabs
+local native_minimap = false
+local minimap_action_ack = false
+local refresh_minimap
+local minimap_channel
+local minimap_pending, minimap_dirty = false, false
+local minimap_epoch = 0
+local minimap_revision = 0
 
 -- The stdin-drain handle. Only live once the Surface path is committed (after
 -- the handshake's `opened` verdict); `fail_open` must tear it down before
@@ -90,6 +99,9 @@ local function fail_open(reason)
 end
 
 local function sock_send(obj)
+  if hangup then
+    return
+  end
   local line = vim.json.encode(obj)
   Log.trace("->surface", line)
   sock:write(line .. "\n")
@@ -138,6 +150,67 @@ refresh_tabs = function()
   )
 end
 
+local function continue_minimap()
+  local timer = uv.new_timer()
+  timer:start(0, 0, function()
+    timer:stop()
+    timer:close()
+    refresh_minimap()
+  end)
+end
+
+local function reset_minimap(reason)
+  Log.write("minimap", tostring(reason))
+  minimap_epoch = minimap_epoch + 1
+  minimap_dirty = false
+  native_minimap = false
+  if minimap_revision > 0 and not hangup then
+    minimap_revision = minimap_revision + 1
+    sock_send({ type = "minimap", kind = "hide", revision = minimap_revision })
+  end
+  if rpc then
+    rpc:notify("nvim_exec_lua", { "require('sprite.minimap').attach(...)", { vim.NIL } })
+  end
+end
+
+refresh_minimap = function()
+  if not native_minimap or not minimap_channel or not rpc or hangup then
+    return
+  end
+  if minimap_pending then
+    minimap_dirty = true
+    return
+  end
+  minimap_pending = true
+  minimap_dirty = false
+  local epoch = minimap_epoch
+  rpc:request(
+    "nvim_exec_lua",
+    { "return require('sprite.minimap').pull()", {} },
+    function(err, result)
+      minimap_pending = false
+      if not native_minimap or hangup then
+        return
+      end
+      if epoch ~= minimap_epoch then
+        continue_minimap()
+        return
+      end
+      if err ~= nil and err ~= vim.NIL then
+        reset_minimap(vim.inspect(err))
+        return
+      end
+      if type(result) == "table" and result.type == "minimap" then
+        minimap_revision = result.revision
+        sock_send(result)
+        continue_minimap()
+      elseif minimap_dirty then
+        continue_minimap()
+      end
+    end
+  )
+end
+
 -- Everything the editor draws between one flush and the next, as one batch.
 local function on_flush()
   local ops = translator:take_batch()
@@ -162,19 +235,43 @@ end
 -- Kill the editor and exit as a hangup would (129), leaving swap files to
 -- preserve unsaved work — exactly what a closed terminal does today.
 local function sprite_gone(reason)
-  Log.write("spritegone", reason)
-  if editor then
-    editor:kill("sigterm")
+  if hangup then
+    return
   end
-  -- Record the hangup and stop the loop; the single top-level os.exit reports
-  -- 129. Calling os.exit from inside this libuv callback is forbidden on
-  -- nightly Neovim ("os.exit must not be called in a fast event context").
+  Log.write("spritegone", reason)
   hangup = true
-  uv.stop()
+  if input_bridge then
+    input_bridge.close()
+  end
+  minimap_epoch = minimap_epoch + 1
+  local stopped = false
+  local timeout = uv.new_timer()
+  local function finish()
+    if stopped then
+      return
+    end
+    stopped = true
+    timeout:stop()
+    timeout:close()
+    if editor then
+      editor:kill("sigterm")
+    end
+    uv.stop()
+  end
+  if minimap_channel and rpc then
+    -- Give the provider a bounded chance to release jobs before terminating its editor.
+    timeout:start(100, 0, finish)
+    rpc:request("nvim_exec_lua", { "require('sprite.minimap').attach(nil)", {} }, finish)
+  else
+    finish()
+  end
 end
 
 -- A decoded Surface event.
 local function on_surface_event(event)
+  if hangup then
+    return
+  end
   local t = event.type
   if t == "resize" and not attached then
     -- The first resize carries the real grid size; attach the editor to it.
@@ -189,15 +286,33 @@ local function on_surface_event(event)
     -- Sprite refuses one bad operation and keeps the connection open, so a
     -- refusal is an adapter bug to log, not a reason to end the session.
     Log.write("refused", event.reason or "")
+    -- The host currently identifies minimap refusals only by this exact reason.
+    if native_minimap and event.reason == "malformed: invalid minimap operation" then
+      reset_minimap(event.reason)
+    end
     return
   end
   if t == "closed" then
     sprite_gone(t)
     return
   end
+  if t == "minimap_action" then
+    if
+      native_minimap
+      and rpc
+      and type(event.revision) == "number"
+      and event.revision <= minimap_revision
+    then
+      input_bridge.action(
+        "nvim_exec_lua",
+        { "return require('sprite.minimap').dispatch(...)", { event } }
+      )
+    end
+    return
+  end
   if t == "tab_action" then
     if native_tabs and rpc then
-      rpc:request(
+      input_bridge.action(
         "nvim_exec_lua",
         { "return require('sprite.tabs').dispatch(...) ", { event } },
         function(err)
@@ -211,7 +326,15 @@ local function on_surface_event(event)
   end
   local call = Input.call(event)
   if call and rpc then
-    rpc:notify(call.method, call.args)
+    if native_minimap and (t == "input" or t == "mouse" or t == "paste") then
+      local hook = event
+      if call.method == "nvim_input" then
+        hook = { type = "input", key = call.args[1] }
+      end
+      input_bridge.input(call, hook)
+    else
+      rpc:notify(call.method, call.args)
+    end
   elseif t == "input" and event.key then
     Log.write("dropkey", event.key)
   elseif call then
@@ -244,9 +367,14 @@ function start_editor(cols, rows)
   rpc = Rpc.new(function(bytes)
     ein:write(bytes)
   end)
+  input_bridge = InputBridge.new(rpc)
   rpc:on_notification(function(method, args)
     if method == "redraw" then
       on_redraw(method, args)
+    elseif method == "sprite_minimap_error" then
+      Log.write("minimap", tostring(args[1]))
+    elseif method == "sprite_minimap_changed" then
+      refresh_minimap()
     elseif method == "sprite_tabs_changed" then
       refresh_tabs()
     end
@@ -269,21 +397,42 @@ function start_editor(cols, rows)
       sprite_gone("attach failed")
     else
       Log.trace("attach", "nvim_ui_attach ok")
-      if native_tabs then
+      if native_tabs or native_minimap then
         rpc:request("nvim_get_api_info", {}, function(api_err, info)
           if api_err ~= nil and api_err ~= vim.NIL then
-            disable_tabs(vim.inspect(api_err))
+            if native_tabs then
+              disable_tabs(vim.inspect(api_err))
+            end
+            if native_minimap then
+              reset_minimap(vim.inspect(api_err))
+            end
             return
           end
-          rpc:request(
-            "nvim_exec_lua",
-            { "require('sprite.tabs').attach(...)", { info[1] } },
-            function(tab_err)
-              if tab_err ~= nil and tab_err ~= vim.NIL then
-                disable_tabs(vim.inspect(tab_err))
+          if native_tabs then
+            rpc:request(
+              "nvim_exec_lua",
+              { "require('sprite.tabs').attach(...)", { info[1] } },
+              function(err)
+                if err ~= nil and err ~= vim.NIL then
+                  disable_tabs(vim.inspect(err))
+                end
               end
-            end
-          )
+            )
+          end
+          if native_minimap then
+            minimap_channel = info[1]
+            rpc:request(
+              "nvim_exec_lua",
+              { "require('sprite.minimap').attach(...)", { info[1], minimap_action_ack } },
+              function(err)
+                if err ~= nil and err ~= vim.NIL then
+                  reset_minimap(vim.inspect(err))
+                else
+                  refresh_minimap()
+                end
+              end
+            )
+          end
         end)
       end
     end
@@ -388,6 +537,10 @@ local function connect()
       for _, feature in ipairs(verdict.features or {}) do
         if feature == "grid-tabs-v1" then
           native_tabs = true
+        elseif feature == "grid-minimap-ack-v1" then
+          minimap_action_ack = true
+        elseif feature == "grid-minimap-v1" then
+          native_minimap = true
         end
       end
       surface = verdict.surface

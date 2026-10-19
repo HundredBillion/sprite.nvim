@@ -171,6 +171,15 @@ local function grid_op(op)
       return nil, "invalid active"
     end
     return true
+  elseif op.type == "minimap" then
+    if
+      not integer(op.revision)
+      or op.revision < 1
+      or not ({ begin = true, lines = true, commit = true, state = true, hide = true })[op.kind]
+    then
+      return nil, "invalid minimap operation"
+    end
+    return true
   elseif op.type == "clear" then
     return true
   else
@@ -220,7 +229,7 @@ function M.validate(message, state)
       return nil, "invalid border_side"
     end
     remember_row_height(state, message.description)
-  elseif message.type == "tabs" then
+  elseif message.type == "tabs" or message.type == "minimap" then
     return grid_op(message)
   elseif message.type == "batch" then
     if not vim.islist(message.ops) then
