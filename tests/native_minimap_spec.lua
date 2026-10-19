@@ -44,43 +44,7 @@ end
 server.close()
 vim.fn.delete(fixture)
 
-local function launch(name, features, code, on_message)
-  local init = vim.fn.tempname() .. ".lua"
-  local path = "/tmp/sprite-minimap-" .. uv.getpid() .. "-" .. name .. ".sock"
-  vim.fn.writefile(vim.split(code, "\n", { plain = true }), init)
-  local messages = {}
-  local host = Fake.serve(path, {
-    features = features,
-    on_line = function(line)
-      local message = vim.json.decode(line)
-      messages[#messages + 1] = message
-      if on_message then
-        on_message(message)
-      end
-    end,
-  })
-  local process = uv.spawn(vim.v.progpath, {
-    args = { "-l", root .. "/lua/sprite/adapter.lua", "--clean", "-u", init },
-    env = {
-      "SPRITE_SURFACE_SOCKET=" .. path,
-      "SPRITE_SURFACE_KEY=testkey",
-      "SPRITE_PANE=1",
-      "PATH=" .. vim.env.PATH,
-      "HOME=" .. vim.env.HOME,
-      "VIMRUNTIME=" .. vim.env.VIMRUNTIME,
-      "XDG_STATE_HOME=" .. path .. ".state",
-    },
-    stdio = { nil, nil, 2 },
-  }, function() end)
-  local function close()
-    if process then
-      process:kill("sigterm")
-    end
-    host.close()
-    vim.fn.delete(init)
-  end
-  return host, messages, close
-end
+local launch = dofile(root .. "/tests/adapter_session.lua")
 local function command(host, text)
   host.send({ type = "input", text = ":" .. text })
   host.send({ type = "input", key = "enter" })
@@ -177,6 +141,12 @@ for _, features in ipairs({ {}, { "grid-minimap-v1" } }) do
 end
 
 local vsvim = vim.env.VSVIM_SOURCE or vim.fn.fnamemodify(root, ":h") .. "/VSVim"
+if vim.env.VSVIM_SOURCE then
+  assert(
+    vim.fn.filereadable(vsvim .. "/lua/vsvim/minimap.lua") == 1,
+    "VSVIM_SOURCE must contain the real provider"
+  )
+end
 if vim.fn.filereadable(vsvim .. "/lua/vsvim/minimap.lua") == 1 then
   local observed = vim.fn.tempname()
   local code = string.format(

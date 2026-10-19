@@ -54,40 +54,20 @@ T.eq(bridge.pull().kind, "hide")
 T.eq(bridge.pull(), vim.NIL)
 bridge.setup(nil)
 T.eq(stopped, 1, "replacement stops provider")
-local old_input = vim.api.nvim_input
-local ordered = {}
-vim.api.nvim_input = function(keys)
-  ordered[#ordered + 1] = keys
-  return #keys
-end
+local received_hook
 bridge.setup({
   next = function()
     return nil
   end,
   stop = function() end,
   before_input = function(event)
-    ordered[#ordered + 1] = event.key
+    received_hook = event
     error("hook failure")
   end,
 })
-T.eq(bridge.input("nvim_input", { "x" }, { type = "input", key = "hook" }), 1)
-T.eq(ordered, { "hook", "x" }, "callback failure still delivers original input exactly once")
-T.eq(
-  bridge.input("nvim_command", { "quit" }, {}),
-  false,
-  "input wrapper rejects executable methods"
-)
-T.eq(
-  bridge.input("nvim_ui_try_resize", { 60, 18 }, { type = "resize" }),
-  false,
-  "RPC-only resize stays outside Lua input wrapper"
-)
-T.eq(
-  bridge.input("nvim_ui_set_focus", { true }, { type = "focus" }),
-  false,
-  "RPC-only focus stays outside Lua input wrapper"
-)
-vim.api.nvim_input = old_input
+local event = { type = "input", key = "x" }
+bridge.before_input(event)
+T.eq(received_hook, event, "normalized input reaches selection provider")
 T.eq(bridge.pull().kind, "hide", "provider failure hides only minimap")
 bridge.attach(nil)
 bridge.setup(nil)

@@ -6,6 +6,7 @@ local here = vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":h")
 local Rpc = dofile(here .. "/rpc.lua")
 local Redraw = dofile(here .. "/redraw.lua")
 local Input = dofile(here .. "/input.lua")
+local InputBridge = dofile(here .. "/input_bridge.lua")
 local Log = dofile(here .. "/log.lua")
 local Session = dofile(here .. "/session.lua")
 local repo = vim.fn.fnamemodify(here, ":h:h")
@@ -29,6 +30,7 @@ local editor_exit -- its code, once known
 -- the 129 the top-level exit must return.
 local hangup = false
 local rpc -- the RPC client to the editor
+local input_bridge
 local translator = Redraw.new()
 local attached = false
 local surface
@@ -238,6 +240,9 @@ local function sprite_gone(reason)
   end
   Log.write("spritegone", reason)
   hangup = true
+  if input_bridge then
+    input_bridge.close()
+  end
   minimap_epoch = minimap_epoch + 1
   local stopped = false
   local timeout = uv.new_timer()
@@ -298,13 +303,16 @@ local function on_surface_event(event)
       and type(event.revision) == "number"
       and event.revision <= minimap_revision
     then
-      rpc:notify("nvim_exec_lua", { "return require('sprite.minimap').dispatch(...)", { event } })
+      input_bridge.action(
+        "nvim_exec_lua",
+        { "return require('sprite.minimap').dispatch(...)", { event } }
+      )
     end
     return
   end
   if t == "tab_action" then
     if native_tabs and rpc then
-      rpc:request(
+      input_bridge.action(
         "nvim_exec_lua",
         { "return require('sprite.tabs').dispatch(...) ", { event } },
         function(err)
@@ -323,10 +331,7 @@ local function on_surface_event(event)
       if call.method == "nvim_input" then
         hook = { type = "input", key = call.args[1] }
       end
-      rpc:notify(
-        "nvim_exec_lua",
-        { "return require('sprite.minimap').input(...)", { call.method, call.args, hook } }
-      )
+      input_bridge.input(call, hook)
     else
       rpc:notify(call.method, call.args)
     end
@@ -362,6 +367,7 @@ function start_editor(cols, rows)
   rpc = Rpc.new(function(bytes)
     ein:write(bytes)
   end)
+  input_bridge = InputBridge.new(rpc)
   rpc:on_notification(function(method, args)
     if method == "redraw" then
       on_redraw(method, args)

@@ -185,23 +185,13 @@ function M.dispatch(event)
   return result ~= false
 end
 
-local allowed = {
-  nvim_input = true,
-  nvim_input_mouse = true,
-  nvim_paste = true,
-}
-function M.input(method, args, event)
-  if not allowed[method] then
-    return false
-  end
+function M.before_input(event)
   if provider and provider.before_input then
     local ok, err = pcall(provider.before_input, event)
     if not ok then
       failed(err)
     end
   end
-  -- Restore the selection before queuing its native command, in the same RPC execution.
-  return vim.api[method](unpack(args))
 end
 
 return M
