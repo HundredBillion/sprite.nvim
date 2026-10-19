@@ -405,12 +405,12 @@ restart, messages, close_restart = launch(
 T.ok(
   vim.wait(5000, function()
     for _, m in ipairs(messages) do
-      if m.type == "minimap" and m.kind == "state" and m.generation == 2 then
+      if m.type == "minimap" and m.kind == "hide" then
         return true
       end
     end
   end, 10),
-  "minimap refusal restarts source transaction"
+  "minimap refusal hides and disables the failed source transaction"
 )
 T.ok(wait_file(stopped_file), "restart stops source jobs")
 local watermark, seen_hide, stale_after_hide = 0, false, false
@@ -420,14 +420,22 @@ for _, m in ipairs(messages) do
     watermark = m.revision
     if m.kind == "hide" then
       seen_hide = true
-    elseif seen_hide and m.generation == 1 then
+    elseif seen_hide then
       stale_after_hide = true
     end
   end
 end
 T.ok(seen_hide, "refusal clears staged source with hide")
-T.eq(stale_after_hide, false, "cancelled old generation response never follows restart hide")
+T.eq(stale_after_hide, false, "no source response follows refusal hide")
 local stops = #vim.fn.readfile(stopped_file)
+local minimap_count=0
+for _,m in ipairs(messages) do if m.type=='minimap' then minimap_count=minimap_count+1 end end
+for _=1,3 do restart.send({type='refused',reason='malformed: invalid minimap operation'}) end
+vim.wait(200,function() return false end,10)
+local after_count=0
+for _,m in ipairs(messages) do if m.type=='minimap' then after_count=after_count+1 end end
+T.eq(after_count,minimap_count,'repeated protocol refusals do not restart or pull the same source')
+T.eq(#vim.fn.readfile(stopped_file),stops,'repeated refusals leave the provider stopped')
 restart.send({ type = "refused", reason = "invalid cursor" })
 command(restart, "file tabs-still-live.lua")
 T.ok(
@@ -442,12 +450,6 @@ T.ok(
 )
 T.eq(#vim.fn.readfile(stopped_file), stops, "unrelated refusal does not restart minimap")
 restart.send({ type = "closed" })
-T.ok(
-  vim.wait(3000, function()
-    return #vim.fn.readfile(stopped_file) > stops
-  end, 10),
-  "Surface teardown stops provider before editor exits"
-)
 close_restart()
 vim.fn.delete(stopped_file)
 

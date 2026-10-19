@@ -290,7 +290,7 @@ local function on_surface_event(event)
     Log.write("refused", event.reason or "")
     -- The host currently identifies minimap refusals only by this exact reason.
     if native_minimap and event.reason == "malformed: invalid minimap operation" then
-      reset_minimap(event.reason, true)
+      reset_minimap(event.reason, false)
     end
     return
   end
