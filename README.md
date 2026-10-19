@@ -118,8 +118,9 @@ the adapter yields between source chunks and never reloads source for scrolling.
 
 `before_input(event)` runs synchronously before the original input API call,
 so a provider can restore a preserved selection before copy, cut, or paste.
-Input keys are normalized Neovim key text; paste, mouse, focus, and resize keep
-their event types. `stop()` releases source jobs on replacement, restart, and
+Input keys are normalized Neovim key text; paste and mouse keep their event
+types. Resize, focus, and blur use direct RPC because Neovim exposes those UI
+methods only over RPC. `stop()` releases source jobs on replacement, restart, and
 Surface teardown. Provider failures hide the minimap and are recorded in the
 adapter log while ordinary editing and native tabs continue. Older hosts and
 editors without a provider start no minimap source jobs.

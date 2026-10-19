@@ -77,6 +77,16 @@ T.eq(
   false,
   "input wrapper rejects executable methods"
 )
+T.eq(
+  bridge.input("nvim_ui_try_resize", { 60, 18 }, { type = "resize" }),
+  false,
+  "RPC-only resize stays outside Lua input wrapper"
+)
+T.eq(
+  bridge.input("nvim_ui_set_focus", { true }, { type = "focus" }),
+  false,
+  "RPC-only focus stays outside Lua input wrapper"
+)
 vim.api.nvim_input = old_input
 T.eq(bridge.pull().kind, "hide", "provider failure hides only minimap")
 bridge.attach(nil)

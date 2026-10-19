@@ -177,8 +177,6 @@ local allowed = {
   nvim_input = true,
   nvim_input_mouse = true,
   nvim_paste = true,
-  nvim_ui_try_resize = true,
-  nvim_ui_set_focus = true,
 }
 function M.input(method, args, event)
   if not allowed[method] then

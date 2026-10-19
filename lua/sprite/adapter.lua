@@ -325,7 +325,7 @@ local function on_surface_event(event)
   end
   local call = Input.call(event)
   if call and rpc then
-    if native_minimap then
+    if native_minimap and (t == "input" or t == "mouse" or t == "paste") then
       local hook = event
       if call.method == "nvim_input" then
         hook = { type = "input", key = call.args[1] }

@@ -183,6 +183,7 @@ if vim.fn.filereadable(vsvim .. "/lua/vsvim/minimap.lua") == 1 then
     [[
 vim.opt.rtp:prepend(%q)
 vim.o.swapfile=false
+vim.o.mouse="a"
 require('vsvim.editing').setup()
 vim.keymap.set('x','Q','ygg0v3ld')
 _G.clip={{'replacement'},'v'}
@@ -277,10 +278,28 @@ vim.defer_fn(observe,20)
   end
   select("gg0v3l")
   browse()
+  real.send({ type = "mouse", button = "wheel", action = "down", modifiers = "", row = 1, col = 1 })
+  await(function(s)
+    return s.top and s.top > 500 and s.mode == "n"
+  end, "editor wheel scrolls browsed viewport while retaining saved selection")
   real.send({ type = "input", key = "cmd-c" })
   await(function(s)
     return s.clip and s.clip[1] == "word" and s.mode == "v"
   end, "Cmd-C copies original selection through real adapter")
+  browse()
+  real.send({ type = "mouse", button = "left", action = "press", modifiers = "", row = 1, col = 1 })
+  T.ok(
+    vim.wait(3000, function()
+      local s = latest_state()
+      return s and s.selection == vim.NIL
+    end, 10),
+    "actual editor left click clears saved selection"
+  )
+  real.send({ type = "input", text = "yy" })
+  await(function(s)
+    return s.reg and s.reg:match("^row ") ~= nil
+  end, "native yank after editor click stays at clicked row")
+  select("gg0v3l")
   browse()
   real.send({ type = "input", key = "cmd-x" })
   await(function(s)
@@ -523,6 +542,12 @@ end,dispatch=function(event) vim.fn.writefile({tostring(event.revision)},%q,'a')
   )
 )
 T.ok(wait_file(pulling), "state pull is outstanding before future pointer action")
+T.ok(
+  vim.wait(3000, function()
+    return has(watermark_messages, "state")
+  end, 10),
+  "captured state reaches fake host before pending-pull assertion"
+)
 local captured
 for _, message in ipairs(watermark_messages) do
   if message.type == "minimap" and message.kind == "state" then
@@ -569,3 +594,66 @@ close_watermark()
 for _, path in ipairs({ pulling, actions, settled }) do
   vim.fn.delete(path)
 end
+
+local ui_observed = vim.fn.tempname()
+local ui_host, ui_messages, close_ui = launch(
+  "ui-rpc-events",
+  { "grid-minimap-v1" },
+  string.format(
+    [[
+local focus,hooks={},{}
+vim.api.nvim_create_autocmd({'FocusGained','FocusLost'},{callback=function(e) focus[#focus+1]=e.event end})
+require('sprite.minimap').setup({next=function() return nil end,stop=function() end,before_input=function(e) hooks[#hooks+1]=e.type end})
+local function observe()
+  local ui=vim.api.nvim_list_uis()[1]
+  if ui then vim.fn.writefile({vim.json.encode({width=ui.width,height=ui.height,first=vim.api.nvim_buf_get_lines(0,0,1,false)[1],focus=focus,hooks=hooks})},%q) end
+  vim.defer_fn(observe,20)
+end
+vim.defer_fn(observe,20)
+]],
+    ui_observed
+  )
+)
+T.ok(wait_file(ui_observed), "negotiated minimap UI observer starts")
+local function observed_ui()
+  if vim.fn.filereadable(ui_observed) == 0 then
+    return {}
+  end
+  local ok, result = pcall(vim.json.decode, table.concat(vim.fn.readfile(ui_observed), "\n"))
+  return ok and result or {}
+end
+ui_host.send({ type = "input", text = "iORDER" })
+ui_host.send({ type = "resize", cols = 60, rows = 18, width = 480, height = 288 })
+ui_host.send({ type = "input", text = "-RESIZED" })
+ui_host.send({ type = "blur" })
+ui_host.send({ type = "focus" })
+ui_host.send({ type = "paste", text = "-PASTE" })
+ui_host.send({ type = "input", key = "escape" })
+T.ok(
+  vim.wait(3000, function()
+    return observed_ui().first == "ORDER-RESIZED-PASTE"
+  end, 10),
+  "editing input stays ordered around UI resize and focus RPCs"
+)
+T.ok(
+  vim.wait(3000, function()
+    local ui = observed_ui()
+    return ui.width == 60 and ui.height == 18
+  end, 10),
+  "negotiated minimap resize reaches actual attached Neovim UI"
+)
+T.ok(
+  vim.wait(3000, function()
+    local events = observed_ui().focus or {}
+    return #events >= 2 and events[#events - 1] == "FocusLost" and events[#events] == "FocusGained"
+  end, 10),
+  "negotiated minimap blur and focus reach actual editor autocmds"
+)
+T.eq(
+  observed_ui().hooks,
+  { "input", "input", "paste", "input" },
+  "only editing input enters synchronous minimap hook"
+)
+T.eq(ui_host.invalid, nil)
+close_ui()
+vim.fn.delete(ui_observed)
