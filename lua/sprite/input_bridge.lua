@@ -1,11 +1,11 @@
 -- Keep selection restoration ahead of mapping resolution without trapping continuation keys.
 local M = {}
 
-function M.new(rpc)
+function M.new(rpc, options)
   local queue, pending, waiting, barrier = {}, 0, nil, false
   local closed = false
   local pump
-  local function deliver(entry)
+  local function deliver(entry, allowed)
     if closed or entry.delivered then
       return
     end
@@ -13,7 +13,9 @@ function M.new(rpc)
     if waiting == entry then
       waiting = nil
     end
-    rpc:notify(entry.call.method, entry.call.args)
+    if allowed ~= false then
+      rpc:notify(entry.call.method, entry.call.args)
+    end
     pump()
   end
   pump = function()
@@ -44,18 +46,20 @@ function M.new(rpc)
     entry.started = true
     pending = pending + 1
     waiting = entry
-    rpc:request(
-      "nvim_exec_lua",
-      { "return require('sprite.minimap').before_input(...)", { entry.event } },
-      function()
-        if closed then
-          return
-        end
-        pending = pending - 1
-        deliver(entry)
-        pump()
+    rpc:request("nvim_exec_lua", {
+      options
+          and options.markdown
+          and "if not require('sprite.markdown').before_input(...) then return false end; require('sprite.minimap').before_input(...); return true"
+        or "return require('sprite.minimap').before_input(...)",
+      { entry.event },
+    }, function(_, allowed)
+      if closed then
+        return
       end
-    )
+      pending = pending - 1
+      deliver(entry, allowed)
+      pump()
+    end)
     -- Neovim answers get_mode at the blocking boundary if normal Lua cannot run.
     -- The hook owns no key, so either reply can release the native input exactly once.
     rpc:request("nvim_get_mode", {}, function(_, mode)

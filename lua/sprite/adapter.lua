@@ -47,6 +47,11 @@ local minimap_channel
 local minimap_pending, minimap_dirty = false, false
 local minimap_epoch = 0
 local minimap_revision = 0
+local native_markdown = false
+local markdown_channel
+local markdown_pending, markdown_dirty = false, false
+local markdown_revision, markdown_epoch = 0, 0
+local refresh_markdown
 
 -- The stdin-drain handle. Only live once the Surface path is committed (after
 -- the handshake's `opened` verdict); `fail_open` must tear it down before
@@ -149,6 +154,65 @@ refresh_tabs = function()
       if tabs_dirty then
         tabs_dirty = false
         refresh_tabs()
+      end
+    end
+  )
+end
+
+local function continue_markdown()
+  local timer = uv.new_timer()
+  timer:start(0, 0, function()
+    timer:stop()
+    timer:close()
+    refresh_markdown()
+  end)
+end
+
+local function reset_markdown(reason)
+  Log.write("markdown", tostring(reason))
+  markdown_epoch = markdown_epoch + 1
+  native_markdown, markdown_dirty = false, false
+  if markdown_revision > 0 and not hangup then
+    markdown_revision = markdown_revision + 1
+    sock_send({ type = "markdown", kind = "hide", revision = markdown_revision })
+  end
+  if rpc then
+    rpc:notify("nvim_exec_lua", { "require('sprite.markdown').attach(nil)", {} })
+  end
+end
+
+refresh_markdown = function()
+  if not native_markdown or not markdown_channel or not rpc or hangup then
+    return
+  end
+  if markdown_pending then
+    markdown_dirty = true
+    return
+  end
+  markdown_pending, markdown_dirty = true, false
+  local epoch = markdown_epoch
+  rpc:request(
+    "nvim_exec_lua",
+    { "return require('sprite.markdown').pull()", {} },
+    function(err, result)
+      markdown_pending = false
+      if not native_markdown or hangup then
+        return
+      end
+      if epoch ~= markdown_epoch then
+        continue_markdown()
+        return
+      end
+      if err ~= nil and err ~= vim.NIL then
+        reset_markdown(vim.inspect(err))
+        return
+      end
+      if type(result) == "table" and result.type == "markdown" then
+        markdown_revision = result.revision
+        sock_send(result)
+        continue_markdown()
+      elseif markdown_dirty then
+        continue_markdown()
       end
     end
   )
@@ -280,6 +344,7 @@ local function sprite_gone(reason)
     input_bridge.close()
   end
   minimap_epoch = minimap_epoch + 1
+  markdown_epoch = markdown_epoch + 1
   local stopped = false
   local timeout = uv.new_timer()
   local function finish()
@@ -294,10 +359,14 @@ local function sprite_gone(reason)
     end
     uv.stop()
   end
-  if minimap_channel and rpc then
+  if (minimap_channel or markdown_channel) and rpc then
     -- Give the provider a bounded chance to release jobs before terminating its editor.
     timeout:start(100, 0, finish)
-    rpc:request("nvim_exec_lua", { "require('sprite.minimap').attach(nil)", {} }, finish)
+    rpc:request(
+      "nvim_exec_lua",
+      { "require('sprite.minimap').attach(nil); require('sprite.markdown').attach(nil)", {} },
+      finish
+    )
   else
     finish()
   end
@@ -329,6 +398,9 @@ local function on_surface_event(event)
     if native_minimap and event.reason == "malformed: invalid minimap operation" then
       reset_minimap(event.reason)
     end
+    if native_markdown and event.reason == "malformed: invalid markdown operation" then
+      reset_markdown(event.reason)
+    end
     return
   end
   if t == "closed" then
@@ -349,6 +421,15 @@ local function on_surface_event(event)
     end
     return
   end
+  if t == "markdown_action" then
+    if native_markdown and rpc then
+      input_bridge.action(
+        "nvim_exec_lua",
+        { "return require('sprite.markdown').dispatch(...)", { event } }
+      )
+    end
+    return
+  end
   if t == "tab_action" then
     if native_tabs and rpc then
       input_bridge.action(
@@ -365,7 +446,7 @@ local function on_surface_event(event)
   end
   local call = Input.call(event)
   if call and rpc then
-    if native_minimap and (t == "input" or t == "mouse" or t == "paste") then
+    if (native_minimap or native_markdown) and (t == "input" or t == "mouse" or t == "paste") then
       local hook = event
       if call.method == "nvim_input" then
         hook = { type = "input", key = call.args[1] }
@@ -409,7 +490,7 @@ function start_editor(cols, rows)
   rpc = Rpc.new(function(bytes)
     ein:write(bytes)
   end)
-  input_bridge = InputBridge.new(rpc)
+  input_bridge = InputBridge.new(rpc, { markdown = native_markdown })
   rpc:on_notification(function(method, args)
     if method == "redraw" then
       on_redraw(method, args)
@@ -419,6 +500,8 @@ function start_editor(cols, rows)
       refresh_minimap()
     elseif method == "sprite_tabs_changed" then
       refresh_tabs()
+    elseif method == "sprite_markdown_changed" then
+      refresh_markdown()
     end
   end)
   eout:read_start(function(err, data)
@@ -439,7 +522,7 @@ function start_editor(cols, rows)
       sprite_gone("attach failed")
     else
       Log.trace("attach", "nvim_ui_attach ok")
-      if native_tabs or native_minimap then
+      if native_tabs or native_minimap or native_markdown then
         rpc:request("nvim_get_api_info", {}, function(api_err, info)
           if api_err ~= nil and api_err ~= vim.NIL then
             if native_tabs then
@@ -447,6 +530,9 @@ function start_editor(cols, rows)
             end
             if native_minimap then
               reset_minimap(vim.inspect(api_err))
+            end
+            if native_markdown then
+              reset_markdown(vim.inspect(api_err))
             end
             return
           end
@@ -471,6 +557,20 @@ function start_editor(cols, rows)
                   reset_minimap(vim.inspect(err))
                 else
                   refresh_minimap()
+                end
+              end
+            )
+          end
+          if native_markdown then
+            markdown_channel = info[1]
+            rpc:request(
+              "nvim_exec_lua",
+              { "require('sprite.markdown').attach(...)", { info[1] } },
+              function(err)
+                if err ~= nil and err ~= vim.NIL then
+                  reset_markdown(vim.inspect(err))
+                else
+                  refresh_markdown()
                 end
               end
             )
@@ -585,6 +685,8 @@ local function connect()
           minimap_action_ack = true
         elseif feature == "grid-minimap-v1" then
           native_minimap = true
+        elseif feature == "grid-markdown-v1" then
+          native_markdown = true
         end
       end
       surface = verdict.surface

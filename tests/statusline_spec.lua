@@ -1,4 +1,7 @@
 local Statusline = require("sprite.statusline")
+local previous_buffer = vim.api.nvim_get_current_buf()
+local fixture = vim.api.nvim_create_buf(false, true)
+vim.api.nvim_set_current_buf(fixture)
 local saved =
   { laststatus = vim.o.laststatus, statusline = vim.o.statusline, cmdheight = vim.o.cmdheight }
 vim.o.laststatus = 3
@@ -32,3 +35,9 @@ T.eq(
 for name, value in pairs(saved) do
   vim.o[name] = value
 end
+if vim.api.nvim_buf_is_valid(previous_buffer) then
+  vim.api.nvim_set_current_buf(previous_buffer)
+else
+  vim.cmd.enew()
+end
+vim.api.nvim_buf_delete(fixture, { force = true })
