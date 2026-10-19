@@ -43,6 +43,7 @@ function M.setup(options)
   end
   hide = hide or state ~= nil
   state, provider = nil, options
+  enabled = channel ~= nil
   if provider and provider.attached and channel then
     local ok, err = pcall(provider.attached, enabled)
     if not ok then
@@ -166,5 +167,12 @@ function M.before_input(event)
   end
   return result ~= false
 end
+
+vim.api.nvim_create_autocmd("VimLeavePre", {
+  group = vim.api.nvim_create_augroup("SpriteNativeMarkdown", { clear = true }),
+  callback = function()
+    M.attach(nil)
+  end,
+})
 
 return M
