@@ -26,8 +26,16 @@ T.eq(vim.fn.strdisplaywidth(unicode.source), vim.o.columns)
 T.eq(unicode.define["1"].underline, "single")
 vim.g.sprite_follow_native = true
 local previous_follow = package.loaded.follow
-package.loaded.follow = { native_snapshot = function() return { enabled = true, ready = false } end }
-T.eq(Statusline.snapshot(120).follow, { enabled = true, ready = false }, "native Follow state travels with footer")
+package.loaded.follow = {
+  native_snapshot = function()
+    return { enabled = true, ready = false }
+  end,
+}
+T.eq(
+  Statusline.snapshot(120).follow,
+  { enabled = true, ready = false },
+  "native Follow state travels with footer"
+)
 package.loaded.follow = previous_follow
 vim.g.sprite_follow_native = nil
 vim.o.cmdheight = 1

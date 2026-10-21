@@ -448,7 +448,9 @@ local function on_surface_event(event)
   if t == "follow_action" then
     if native_follow and event.action == "toggle" and rpc then
       input_bridge.action("nvim_exec_lua", { "require('follow').toggle()", {} }, function(err)
-        if err ~= nil and err ~= vim.NIL then Log.write("follow", vim.inspect(err)) end
+        if err ~= nil and err ~= vim.NIL then
+          Log.write("follow", vim.inspect(err))
+        end
       end)
     end
     return
@@ -484,7 +486,9 @@ function start_editor(cols, rows)
     fail_open("invalid Surface id")
     return
   end
-  if native_follow then command = command .. "; vim.g.sprite_follow_native = true" end
+  if native_follow then
+    command = command .. "; vim.g.sprite_follow_native = true"
+  end
   local args = vim.list_extend({ "--embed", "--cmd", command }, user_args)
   editor = uv.spawn(vim.v.progpath, {
     args = args,
