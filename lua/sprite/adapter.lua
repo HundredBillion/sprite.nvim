@@ -36,6 +36,7 @@ local attached = false
 local surface
 local native_tabs = false
 local native_footer = false
+local native_follow = false
 local footer_columns = 80
 local footer_pending, footer_dirty = false, false
 local previous_footer
@@ -444,6 +445,14 @@ local function on_surface_event(event)
     end
     return
   end
+  if t == "follow_action" then
+    if native_follow and event.action == "toggle" and rpc then
+      input_bridge.action("nvim_exec_lua", { "require('follow').toggle()", {} }, function(err)
+        if err ~= nil and err ~= vim.NIL then Log.write("follow", vim.inspect(err)) end
+      end)
+    end
+    return
+  end
   local call = Input.call(event)
   if call and rpc then
     if (native_minimap or native_markdown) and (t == "input" or t == "mouse" or t == "paste") then
@@ -475,6 +484,7 @@ function start_editor(cols, rows)
     fail_open("invalid Surface id")
     return
   end
+  if native_follow then command = command .. "; vim.g.sprite_follow_native = true" end
   local args = vim.list_extend({ "--embed", "--cmd", command }, user_args)
   editor = uv.spawn(vim.v.progpath, {
     args = args,
@@ -681,6 +691,8 @@ local function connect()
           native_tabs = true
         elseif feature == "grid-footer-v1" then
           native_footer = true
+        elseif feature == "grid-follow-v1" then
+          native_follow = true
         elseif feature == "grid-minimap-ack-v1" then
           minimap_action_ack = true
         elseif feature == "grid-minimap-v1" then
