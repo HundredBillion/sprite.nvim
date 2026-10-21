@@ -63,7 +63,7 @@ function M.snapshot(columns)
     end
   end
   local base = vim.api.nvim_get_hl(0, { name = "StatusLine", link = false })
-  return {
+  local snapshot = {
     type = "footer",
     source = source_text,
     row = vim.o.lines - vim.o.cmdheight - 1,
@@ -77,6 +77,13 @@ function M.snapshot(columns)
     bg = color(base.bg),
     sp = color(base.sp),
   }
+  if vim.g.sprite_follow_native then
+    local follow = package.loaded.follow
+    if follow and type(follow.native_snapshot) == "function" then
+      snapshot.follow = follow.native_snapshot()
+    end
+  end
+  return snapshot
 end
 
 return M
