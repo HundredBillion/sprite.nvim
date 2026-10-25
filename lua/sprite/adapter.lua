@@ -39,6 +39,8 @@ local native_footer = false
 local native_follow = false
 local footer_columns = 80
 local footer_pending, footer_dirty = false, false
+local footer_timer = uv.new_timer()
+local footer_scheduled = false
 local previous_footer
 local refresh_tabs
 local native_minimap = false
@@ -317,7 +319,13 @@ local function on_flush()
   if ops then
     sock_send({ type = "batch", ops = ops })
   end
-  refresh_footer()
+  if native_footer and not footer_scheduled then
+    footer_scheduled = true
+    footer_timer:start(8, 0, function()
+      footer_scheduled = false
+      refresh_footer()
+    end)
+  end
 end
 
 -- One redraw notification carries many events; translate each, flush at the end.
@@ -737,6 +745,8 @@ connect()
 while not hangup and editor_exit == nil and uv.loop_alive() do
   uv.run()
 end
+footer_timer:stop()
+footer_timer:close()
 -- Runs after uv.run() returns, so it is not in a fast event context. A hangup
 -- (Sprite went away) always reports 129; otherwise the editor's own code.
 os.exit(hangup and 129 or editor_exit or 0)
