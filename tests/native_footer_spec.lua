@@ -31,6 +31,7 @@ local server = Fake.serve(sock, {
     end
   end,
 })
+local exit_code
 local child = vim.uv.spawn(vim.v.progpath, {
   args = {
     "-l",
@@ -49,7 +50,9 @@ local child = vim.uv.spawn(vim.v.progpath, {
     "XDG_STATE_HOME=" .. sock .. ".state",
   },
   stdio = { nil, nil, 2 },
-}, function() end)
+}, function(code)
+  exit_code = code
+end)
 local function latest()
   return updates[#updates] or {}
 end
@@ -105,6 +108,13 @@ T.ok(
 )
 server.send({ type = "input", text = ":qa!" })
 server.send({ type = "input", key = "enter" })
-child:kill("sigterm")
+T.ok(
+  vim.wait(3000, function()
+    return exit_code ~= nil
+  end, 10),
+  "adapter exits cleanly with a scheduled footer refresh"
+)
+T.eq(exit_code, 0, "native footer timer does not keep adapter alive after editor exit")
+child:close()
 server.close()
 vim.fn.delete(sock .. ".state", "rf")
