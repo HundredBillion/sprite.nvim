@@ -12,7 +12,7 @@ Neovim plugin that draws Neovim through Sprite's native Surfaces
 
 ## The editor adapter
 
-Inside a [Sprite](https://github.com/HundredBillion/Sprite) pane (0.1.6 or
+Inside a [Sprite](https://github.com/HundredBillion/Sprite) pane (0.6.0 or
 later), `sprite-nvim` draws Neovim through a native grid Surface: real font
 rendering, the theme's colours by highlight group, the mouse in cells. In any
 other terminal, or when Sprite refuses, it is plain Neovim — same arguments,
