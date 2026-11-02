@@ -17,7 +17,11 @@ Log.open()
 local user_args = arg -- the launcher passed the user's Neovim arguments through
 local socket_path = uv.os_getenv("SPRITE_SURFACE_SOCKET")
 local key = uv.os_getenv("SPRITE_SURFACE_KEY")
-local pane = tonumber(uv.os_getenv("SPRITE_PANE"))
+-- The pane's address, `<window>:<pane>`, passed back to Sprite as it is.
+local pane = uv.os_getenv("SPRITE_PANE")
+if pane == "" then
+  pane = nil
+end
 
 -- The Surface socket: newline-delimited JSON in both directions.
 local sock = uv.new_pipe(false)

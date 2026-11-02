@@ -118,7 +118,7 @@ do
     first = {
       type = "capabilities",
       version = 1,
-      pane = 1,
+      pane = "f00d:1",
       owner_pid = vim.uv.os_getpid(),
       return_target = "terminal",
     },

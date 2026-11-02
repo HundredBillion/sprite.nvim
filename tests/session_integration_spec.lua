@@ -30,7 +30,7 @@ local server = Fake.serve(sock, { surface = 357 })
 local env = {
   "SPRITE_SURFACE_SOCKET=" .. sock,
   "SPRITE_SURFACE_KEY=testkey",
-  "SPRITE_PANE=0",
+  "SPRITE_PANE=f00d:0",
   "PATH=" .. vim.fn.fnamemodify(vim.v.progpath, ":h") .. ":" .. (uv.os_getenv("PATH") or ""),
   "VIMRUNTIME=" .. vim.env.VIMRUNTIME,
   "HOME=" .. (uv.os_getenv("HOME") or "/tmp"),
@@ -66,12 +66,12 @@ end
 local seen = read_json(result)
 T.ok(seen ~= nil, "actual require(sprite) ran during embedded init")
 T.ok(server.first_open and server.first_open.owner_pid > 0, "adapter registers fill owner PID")
-T.eq(server.first_open and server.first_open.pane, 0, "adapter opens Sprite pane zero")
+T.eq(server.first_open and server.first_open.pane, "f00d:0", "adapter opens Sprite pane zero")
 if seen then
   T.eq(seen.marker.surface, 357, "adapter retains handshake Surface id")
   T.eq(seen.marker.pid, seen.pid, "bootstrap marker belongs to embedded process")
   T.eq(seen.surface, 357, "session resolves grid return target before UI attachment")
-  T.eq(seen.pane, 0, "embedded session resolves Sprite pane zero")
+  T.eq(seen.pane, "f00d:0", "embedded session resolves Sprite pane zero")
 end
 local inner = read_json(nested)
 T.ok(inner ~= nil, "nested Neovim launched from embedded init")

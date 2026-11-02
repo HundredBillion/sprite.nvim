@@ -7,9 +7,10 @@ local function positive_integer(value)
   return n and n > 0 and n <= MAX_SAFE_INTEGER and n == math.floor(n) and n or nil
 end
 
-local function pane_integer(value)
-  local n = tonumber(value)
-  return n and n >= 0 and n <= MAX_SAFE_INTEGER and n == math.floor(n) and n or nil
+-- SPRITE_PANE is the pane's address, `<window>:<pane>`. It is passed back to
+-- Sprite as it is; Sprite checks it.
+local function pane_address(value)
+  return type(value) == "string" and value ~= "" and value or nil
 end
 
 function Session.terminal_ui_owner(uis, channel_info)
@@ -33,7 +34,7 @@ function Session.terminal_ui_owner(uis, channel_info)
 end
 
 function Session.resolve(facts)
-  local pane = pane_integer(facts.pane)
+  local pane = pane_address(facts.pane)
   if
     type(facts.path) ~= "string"
     or facts.path == ""

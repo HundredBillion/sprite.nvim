@@ -14,7 +14,7 @@ sprite.session.current = function()
   return {
     path = "/tmp/unused",
     key = "secret",
-    pane = 1,
+    pane = "f00d:1",
     pid = vim.uv.os_getpid(),
     return_target = "terminal",
   }

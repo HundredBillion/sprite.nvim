@@ -8,7 +8,7 @@ local function adapter_env(sock)
   return {
     "SPRITE_SURFACE_SOCKET=" .. sock,
     "SPRITE_SURFACE_KEY=testkey",
-    "SPRITE_PANE=1",
+    "SPRITE_PANE=f00d:1",
     "PATH=" .. vim.fn.fnamemodify(vim.v.progpath, ":h") .. ":" .. (uv.os_getenv("PATH") or ""),
     "VIMRUNTIME=" .. vim.env.VIMRUNTIME,
     "HOME=" .. (uv.os_getenv("HOME") or "/tmp"),

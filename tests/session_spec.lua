@@ -3,7 +3,7 @@ local Session = require("sprite.session")
 local base = {
   path = "/tmp/sprite.sock",
   key = "secret",
-  pane = "9",
+  pane = "f00d:9",
   pid = 123,
   marker = nil,
   uis = { {} },
@@ -28,10 +28,15 @@ local cases = {
   },
   { "missing path", { path = false } },
   { "missing key", { key = false } },
-  { "malformed pane", { pane = "9x" } },
-  { "pane zero terminal", { pane = "0" }, "terminal", "terminal" },
-  { "pane zero grid", { pane = "0", marker = { pid = 123, surface = 77 }, uis = {} }, "grid", 77 },
-  { "negative pane", { pane = "-1" } },
+  { "missing pane", { pane = false } },
+  { "empty pane", { pane = "" } },
+  { "pane zero terminal", { pane = "f00d:0" }, "terminal", "terminal" },
+  {
+    "pane zero grid",
+    { pane = "f00d:0", marker = { pid = 123, surface = 77 }, uis = {} },
+    "grid",
+    77,
+  },
   { "stale marker cannot become terminal", { marker = { pid = 122, surface = 77 } } },
   { "invalid grid id", { marker = { pid = 123, surface = 0 } } },
   { "no attached UI", { uis = {} } },
@@ -44,6 +49,13 @@ local cases = {
 }
 for _, case in ipairs(cases) do
   local context = Session.resolve(facts(case[2]))
+  if case[3] then
+    T.eq(
+      context and context.pane,
+      case[2].pane or base.pane,
+      case[1] .. " passes the address through"
+    )
+  end
   T.eq(context and context.presentation, case[3], case[1] .. " presentation")
   if case[3] then
     T.eq(context and context.return_target, case[4], case[1] .. " target")
