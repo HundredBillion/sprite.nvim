@@ -31,7 +31,7 @@ do
     first = {
       type = "open",
       version = 1,
-      pane = 1,
+      pane = "f00d:1",
       owner_pid = uv.os_getpid(),
       position = "fill",
       focus = true,

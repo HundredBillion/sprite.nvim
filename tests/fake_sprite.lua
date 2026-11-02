@@ -12,6 +12,10 @@ local function integer(value)
   return type(value) == "number" and value >= 0 and value == math.floor(value)
 end
 
+local function address(value)
+  return type(value) == "string" and value:match("^[^:]+:%d+$") ~= nil
+end
+
 local function bounded(value, minimum, maximum)
   return type(value) == "number"
     and value == value
@@ -205,7 +209,7 @@ function M.validate(message, state)
   if message.type == "capabilities" then
     if
       message.version ~= 1
-      or not integer(message.pane)
+      or not address(message.pane)
       or not integer(message.owner_pid)
       or message.owner_pid == 0
       or (message.return_target ~= "terminal" and not integer(message.return_target))
@@ -215,7 +219,7 @@ function M.validate(message, state)
   elseif message.type == "open" then
     if
       message.version ~= 1
-      or not integer(message.pane)
+      or not address(message.pane)
       or not integer(message.owner_pid)
       or message.owner_pid == 0
       or not object(message.description)
@@ -268,7 +272,7 @@ function M.validate(message, state)
     end
     remember_row_height(state, message.description)
   elseif message.type == "focus" then
-    if not integer(message.pane) or message.target == nil then
+    if not address(message.pane) or message.target == nil then
       return nil, "focus needs pane and target"
     end
   elseif message.type == "token" then

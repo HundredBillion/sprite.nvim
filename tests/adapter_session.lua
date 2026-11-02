@@ -27,7 +27,7 @@ return function(name, features, code, on_message, observe)
     env = {
       "SPRITE_SURFACE_SOCKET=" .. path,
       "SPRITE_SURFACE_KEY=testkey",
-      "SPRITE_PANE=1",
+      "SPRITE_PANE=f00d:1",
       "PATH=" .. vim.env.PATH,
       "HOME=" .. vim.env.HOME,
       "VIMRUNTIME=" .. vim.env.VIMRUNTIME,

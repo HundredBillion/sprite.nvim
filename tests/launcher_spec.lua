@@ -38,7 +38,7 @@ T.eq(
       NVIM = "/tmp/x",
       SPRITE_SURFACE_SOCKET = "/tmp/s",
       SPRITE_SURFACE_KEY = "k",
-      SPRITE_PANE = "1",
+      SPRITE_PANE = "f00d:1",
     }, "--clean --headless -c 'cquit 4'")
   ),
   4,
@@ -49,7 +49,7 @@ T.eq(
   select(
     3,
     run(
-      { SPRITE_SURFACE_SOCKET = "/tmp/s", SPRITE_SURFACE_KEY = "k", SPRITE_PANE = "1" },
+      { SPRITE_SURFACE_SOCKET = "/tmp/s", SPRITE_SURFACE_KEY = "k", SPRITE_PANE = "f00d:1" },
       "--version"
     )
   ),

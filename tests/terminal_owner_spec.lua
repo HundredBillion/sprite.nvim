@@ -1,7 +1,7 @@
 local child = vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":h")
   .. "/terminal_owner_child.lua"
 local output = vim.fn.tempname()
-local command = "stty rows 24 cols 80; exec env -u NVIM -u TMUX -u STY TERM=xterm-256color SPRITE_PANE=0 SPRITE_SURFACE_SOCKET=/tmp/sprite-test.sock SPRITE_SURFACE_KEY=secret SPRITE_TEST_RESULT="
+local command = "stty rows 24 cols 80; exec env -u NVIM -u TMUX -u STY TERM=xterm-256color SPRITE_PANE=f00d:0 SPRITE_SURFACE_SOCKET=/tmp/sprite-test.sock SPRITE_SURFACE_KEY=secret SPRITE_TEST_RESULT="
   .. vim.fn.shellescape(output)
   .. " "
   .. vim.fn.shellescape(vim.v.progpath)
