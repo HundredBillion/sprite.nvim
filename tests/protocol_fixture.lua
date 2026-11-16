@@ -12,6 +12,10 @@ assert(
 local Fake = dofile("tests/fake_sprite.lua")
 assert(fixture.version == 1)
 assert(fixture.capabilities.request.type == "capabilities")
+assert(Fake.validate(fixture.capabilities.request, {}))
+local obsolete_request = vim.deepcopy(fixture.capabilities.request)
+obsolete_request.pane = 9
+assert(not Fake.validate(obsolete_request, {}), "numeric pane IDs must be refused")
 assert(fixture.capabilities.reply.eligible == true)
 assert(fixture.description.root.kind == "virtual_list")
 assert(fixture.description.root.border_side == "right")
