@@ -18,6 +18,13 @@ rendering, the theme's colours by highlight group, the mouse in cells. In any
 other terminal, or when Sprite refuses, it is plain Neovim — same arguments,
 same exit code.
 
+Sprite 0.6 names panes with a window-qualified address in `SPRITE_PANE`.
+Update sprite.nvim to `v0.5.0` or later (or current `main`) when upgrading
+Sprite. Older adapters interpret that address as a number and fall back to
+terminal rendering, which also prevents native SVGTree and SCM docks from
+opening. Preserve the environment supplied by Sprite; do not replace the
+address with its numeric suffix.
+
 ```sh
 sprite-nvim .            # a file tree, edited in a Surface
 sprite-nvim README.md

@@ -26,6 +26,20 @@ jobs:
         env:
           VSVIM_SOURCE: ${{ github.workspace }}/.test/vsvim
         run: nvim -l tests/run.lua
+  protocol:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: HundredBillion/Sprite
+          ref: b8765ec437148d721749a0c1a90368fa1d48b400
+          path: .test/sprite
+      - uses: rhysd/action-setup-vim@v1
+        with:
+          neovim: true
+          version: stable
+      - run: SPRITE_SOURCE=.test/sprite sh scripts/test-protocol.sh
   format:
     runs-on: ubuntu-latest
     steps:
