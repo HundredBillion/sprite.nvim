@@ -48,3 +48,35 @@ local restored, handle = open()
 T.eq(restored, nil, "native discovery recovers after refusal")
 assert(handle):close()
 host:close()
+
+local invalid_host = Host.start()
+local refused = false
+require("sprite.channel").connect({
+  path = vim.env.SPRITE_SURFACE_SOCKET,
+  key = vim.env.SPRITE_SURFACE_KEY,
+  timeout_ms = 2000,
+  first = { type = "list_rows", revision = 1, rows = "invalid", selected = vim.NIL },
+}, function(problem)
+  refused = problem and problem.code == "refused"
+end)
+assert(
+  vim.wait(3000, function()
+    return refused
+  end),
+  "invalid traffic is refused"
+)
+T.eq(
+  pcall(function()
+    invalid_host:messages("list_rows")
+  end),
+  false,
+  "async failure fails row assertion"
+)
+T.eq(#invalid_host.requests, 0, "invalid traffic cannot satisfy delivery checks")
+T.eq(
+  pcall(function()
+    invalid_host:close()
+  end),
+  false,
+  "async failure fails test after cleanup"
+)

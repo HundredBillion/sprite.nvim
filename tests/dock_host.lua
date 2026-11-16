@@ -9,7 +9,7 @@ local M = {}
 
 function M.start()
   local path = vim.fn.tempname()
-  local host = { pane = "f00d:0", requests = {}, clients = {}, refuse = false }
+  local host = { pane = "f00d:0", requests = {}, clients = {}, errors = {}, refuse = false }
   local previous = { marker = vim.g.sprite_session }
   local environment =
     { SPRITE_PANE = host.pane, SPRITE_SURFACE_SOCKET = path, SPRITE_SURFACE_KEY = "dock-test" }
@@ -41,15 +41,22 @@ function M.start()
         if first then
           local key
           key, line = line:match("^([^ ]+) (.+)$")
-          assert(key == environment.SPRITE_SURFACE_KEY, "first request authenticates")
+          if key ~= environment.SPRITE_SURFACE_KEY then
+            host.errors[#host.errors + 1] = "first request must authenticate"
+            return
+          end
           first = false
         end
-        local message = vim.json.decode(line)
-        host.requests[#host.requests + 1] = message
+        local decoded, message = pcall(vim.json.decode, line)
+        if not decoded then
+          host.errors[#host.errors + 1] = "invalid JSON: " .. tostring(message)
+          return
+        end
         local valid, reason = Fake.validate(message, state)
         local response
         if not valid then
-          error(reason)
+          host.errors[#host.errors + 1] = reason
+          response = { type = "refused", reason = reason }
         elseif
           (message.type == "capabilities" or message.type == "open" or message.type == "focus")
           and message.pane ~= host.pane
@@ -68,6 +75,9 @@ function M.start()
         elseif message.type ~= "close" then
           response = { type = "applied", operation = message.type, revision = message.revision }
         end
+        if valid and (not response or response.type ~= "refused") then
+          host.requests[#host.requests + 1] = message
+        end
         if response then
           client:write(vim.json.encode(response) .. "\n")
         end
@@ -75,6 +85,7 @@ function M.start()
     end)
   end))
   function host:messages(kind)
+    assert(#self.errors == 0, table.concat(self.errors, "\n"))
     return vim.tbl_filter(function(message)
       return message.type == kind
     end, self.requests)
@@ -91,6 +102,7 @@ function M.start()
       vim.env[name] = previous[name]
     end
     vim.g.sprite_session = previous.marker
+    assert(#self.errors == 0, table.concat(self.errors, "\n"))
   end
   return host
 end
