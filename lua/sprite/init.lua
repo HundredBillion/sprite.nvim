@@ -285,7 +285,7 @@ function Handle:rows(revision, rows, selected, done)
     return
   end
   local state = owned[self]
-  local lines = Rows.lines(rows or {})
+  local lines = Rows.lines(rows or {}, state.memory)
   local selected_ok = selected == nil or selected == vim.NIL or type(selected) == "string"
   if not lines or not selected_ok then
     callback(done, err("protocol", "cannot encode message"))
@@ -432,7 +432,9 @@ function M.open(opts, done)
         features = discovered.features,
         limits = discovered.limits,
       }, Handle)
-      owned[handle] = { context = context }
+      -- `reuse_rows` is the caller's word that a row table it passes again
+      -- is unchanged, so its text is kept and not worked out again.
+      owned[handle] = { context = context, memory = opts.reuse_rows and Rows.memory() or nil }
       cancel_open = exchange(
         context,
         {

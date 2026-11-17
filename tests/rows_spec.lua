@@ -112,6 +112,30 @@ T.eq(
   "a row that cannot be encoded is reported"
 )
 
+-- With a memory, a row table seen before is not encoded again.
+do
+  local memory = Rows.memory()
+  local kept = { id = "k", text = "kept", indent = 0, guides = {} }
+  local first = Rows.lines({ kept }, memory)
+  local encodes, encode = 0, vim.json.encode
+  vim.json.encode = function(...)
+    encodes = encodes + 1
+    return encode(...)
+  end
+  local fresh = { id = "f", text = "fresh", indent = 0, guides = {} }
+  local second = Rows.lines({ kept, fresh }, memory)
+  vim.json.encode = encode
+  T.eq(encodes, 1, "only the new row is encoded")
+  T.eq(second[1], first[1], "the remembered row keeps its text")
+  T.eq(vim.json.decode(second[2]), fresh, "the new row is encoded as itself")
+  T.eq(#Rows.lines({ kept, fresh }), 2, "without a memory every row is encoded")
+  -- A row the caller lets go of is forgotten.
+  kept, fresh, first, second = nil, nil, nil, nil
+  collectgarbage()
+  collectgarbage()
+  T.eq(next(memory), nil, "the memory does not keep rows alive")
+end
+
 -- A patch carries only the rows that changed, and is not sent when they are most of the list.
 local many, changed = {}, {}
 for i = 1, 200 do
@@ -214,6 +238,48 @@ do
   -- An unchanged list is a patch with nothing in it.
   T.eq(send(5, again, "fresh"), true, "an unchanged list is accepted")
   T.eq(#host:messages("list_patch")[#host:messages("list_patch")].splices, 0, "as an empty patch")
+
+  -- A caller that opened with reuse_rows and passes a row table again has
+  -- its remembered text sent; a changed table in its place is sent as itself.
+  local reusing
+  sprite.open({
+    side = "right",
+    width = 280,
+    description = { version = 1, root = { kind = "virtual_list", row_height = 22 } },
+    reuse_rows = true,
+  }, function(e, h)
+    T.eq(e, nil, "a second dock opens")
+    reusing = h or false
+  end)
+  assert(vim.wait(3000, function()
+    return reusing ~= nil
+  end))
+  local function send_reusing(revision, list)
+    local answer
+    reusing:rows(revision, list, vim.NIL, function(e)
+      answer = e or true
+    end)
+    assert(
+      vim.wait(3000, function()
+        return answer
+      end),
+      "rows are answered"
+    )
+    return answer
+  end
+  local stable = {}
+  for i = 1, 50 do
+    stable[i] = { id = "s" .. i, text = "stable " .. i, indent = 0, guides = {} }
+  end
+  T.eq(send_reusing(1, stable), true, "the first list is accepted")
+  local next_list = vim.list_slice(stable, 1, 50)
+  next_list[7] = { id = "s7", text = "changed", indent = 0, guides = {} }
+  local before = #host:messages("list_patch")
+  T.eq(send_reusing(2, next_list), true, "a list with one new table is accepted")
+  local last = host:messages("list_patch")[before + 1]
+  T.eq(last and #last.splices, 1, "and sent as one change")
+  T.eq(last and last.splices[1].rows[1].text, "changed", "carrying the new table's row")
+  reusing:close()
 
   -- State still follows the newest rows.
   local state_answer

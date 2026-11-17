@@ -94,6 +94,25 @@ strikethrough, and icon buttons on rows and headers. Rows pass through
 A row button arrives in `on_event` as
 `{ type = "list_action", action = "stage", row = "<row id>" }`.
 
+`dock:rows(revision, rows, selected, callback)` takes the whole list every
+time. What is sent depends on the host: one that lists
+`virtual-list-patch-v1` is sent only the rows that differ from the last list,
+and any other is sent all of them. A plugin calls `rows` the same way for
+both and need not check the feature.
+
+Finding the rows that differ means writing each row out as text, which is
+most of what an unchanged list costs. A plugin can spare that by opening the
+dock with `reuse_rows = true` and passing the same row table again for a row
+that has not changed:
+
+```lua
+sprite.open({ side = "left", width = 300, description = description, reuse_rows = true }, ...)
+```
+
+With `reuse_rows`, a row table that has been passed before is taken to be
+unchanged. Build a new table for a row that changes; changing a table in
+place after passing it would not be noticed.
+
 `open` waits for the current UI context and checks native dock capability and
 eligibility itself. A preceding `sprite.available(callback)` repeats that
 discovery, so use `available` only when checking whether this editor is in an

@@ -18,14 +18,30 @@ local MAX_COMPARED = 50000
 
 local diff = vim.text and vim.text.diff or vim.diff
 
+-- A place to remember each row table's JSON text, for a caller that passes
+-- the same table again for a row that has not changed. A row the caller no
+-- longer holds is forgotten with it.
+function M.memory()
+  return setmetatable({}, { __mode = "k" })
+end
+
 -- Each row as its JSON text, with their length in all as `bytes`, or nil
--- when a row cannot be encoded.
-function M.lines(rows)
+-- when a row cannot be encoded. With `memory`, a row table seen before is
+-- not encoded again: encoding is most of what an unchanged list costs.
+function M.lines(rows, memory)
   local lines, bytes = {}, 0
   for i = 1, #rows do
-    local ok, json = pcall(vim.json.encode, rows[i])
-    if not ok then
-      return nil
+    local row = rows[i]
+    local json = memory and memory[row]
+    if not json then
+      local ok
+      ok, json = pcall(vim.json.encode, row)
+      if not ok then
+        return nil
+      end
+      if memory and type(row) == "table" then
+        memory[row] = json
+      end
     end
     lines[i] = json
     bytes = bytes + #json
