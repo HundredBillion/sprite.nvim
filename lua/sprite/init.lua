@@ -2,6 +2,7 @@ local uv = vim.uv
 local unpack = table.unpack or unpack
 local Channel = require("sprite.channel")
 local Session = require("sprite.session")
+local Rows = require("sprite.rows")
 local M = { session = Session }
 local REQUIRED = { "owned-dock-v1", "virtual-list-v1", "svg-assets-v1", "dock-resize-v1" }
 local handles, pending, resumes, active = {}, {}, {}, {}
@@ -240,18 +241,19 @@ end
 -- `done` runs in the same turn of the event loop that the channel reports
 -- the answer in: every extra turn waits behind whatever else Neovim is
 -- doing, a redraw or a finished job, before a frame can reach the screen.
-local function mutation(self, message, done)
+-- `body`, when given, is `message` already written as JSON.
+local function mutation(self, message, done, body)
   if self.closed then
     callback(done, err("closed"))
     return
   end
   -- The channel always answers from a scheduled callback, never from here.
   owned[self].channel:request(message, "applied", function(e)
-    if not e and message.type == "list_rows" then
+    if not e and (message.type == "list_rows" or message.type == "list_patch") then
       owned[self].revision = message.revision
     end
     call(done, e)
-  end)
+  end, body)
 end
 
 function Handle:assets(entries, done)
@@ -270,13 +272,54 @@ function Handle:update(description, done)
   mutation(self, { type = "update", description = description }, done)
 end
 
+-- Replace the list's rows. A host that takes `list_patch` is sent only the
+-- rows that differ from the last list sent; the caller hands over every row
+-- either way and need not know which happened.
 function Handle:rows(revision, rows, selected, done)
-  mutation(self, {
-    type = "list_rows",
-    revision = revision,
-    rows = rows or {},
-    selected = selected == nil and vim.NIL or selected,
-  }, done)
+  if self.closed then
+    callback(done, err("closed"))
+    return
+  end
+  if type(revision) ~= "number" or revision % 1 ~= 0 or type(rows or {}) ~= "table" then
+    callback(done, err("protocol", "rows needs a whole revision and a list of rows"))
+    return
+  end
+  local state = owned[self]
+  local lines = Rows.lines(rows or {})
+  local selected_ok = selected == nil or selected == vim.NIL or type(selected) == "string"
+  if not lines or not selected_ok then
+    callback(done, err("protocol", "cannot encode message"))
+    return
+  end
+  -- The whole list is a megabyte of text, written out only when it is sent.
+  local function whole(answer)
+    mutation(
+      self,
+      { type = "list_rows", revision = revision },
+      answer,
+      Rows.whole(revision, selected, lines)
+    )
+  end
+  local sent = state.sent
+  -- What the host holds once this request is answered, if it is accepted.
+  state.sent = { revision = revision, lines = lines }
+  local patch
+  if sent and (self.features or {})[Rows.FEATURE] then
+    patch = Rows.patch(revision, sent.revision, selected, Rows.splices(sent.lines, lines), lines)
+  end
+  if not patch then
+    whole(done)
+    return
+  end
+  mutation(self, { type = "list_patch", revision = revision }, function(e)
+    if not e or e.code ~= "refused" or self.closed then
+      call(done, e)
+      return
+    end
+    -- The host did not hold the rows this patch was made against, as when an
+    -- earlier request was refused. The whole list says the same thing.
+    whole(done)
+  end, patch)
 end
 
 function Handle:state(revision, patch, done)

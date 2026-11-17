@@ -52,9 +52,20 @@ function M.start()
           host.errors[#host.errors + 1] = "invalid JSON: " .. tostring(message)
           return
         end
-        local valid, reason = Fake.validate(message, state)
-        local response
-        if not valid then
+        local valid, reason, response
+        if host.refuse_once == message.type then
+          -- Refuse one request without applying it, as a host that had lost its rows would.
+          host.refuse_once = nil
+          host.refused = (host.refused or 0) + 1
+          response = { type = "refused", reason = "test refuses " .. message.type }
+          valid = false
+        else
+          valid, reason = Fake.validate(message, state)
+        end
+        host.rows = state.rows
+        if response then
+          -- Already answered above.
+        elseif not valid then
           host.errors[#host.errors + 1] = reason
           response = { type = "refused", reason = reason }
         elseif

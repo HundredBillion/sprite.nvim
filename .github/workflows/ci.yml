@@ -33,7 +33,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: HundredBillion/Sprite
-          ref: 45661fbee477b7628b291e5e306664da469e3d5a
+          ref: 787d430f5d9846ae3c3c83b64373de70190c68b8
           path: .test/sprite
       - uses: rhysd/action-setup-vim@v1
         with:

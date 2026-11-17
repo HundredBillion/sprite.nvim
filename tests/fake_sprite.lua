@@ -201,6 +201,51 @@ local function grid_op(op)
   return true
 end
 
+-- Checks a whole list as the host does. Returns the set of its row ids and
+-- of the ids its guides name, or nil and why it is refused.
+local function check_rows(rows, selected)
+  local ids, groups = {}, {}
+  for _, row in ipairs(rows) do
+    if
+      not object(row)
+      or not label(row.id)
+      -- An input row's text is what has been typed into it, which starts empty.
+      or not (label(row.text) or row.kind == "input" and row.text == "")
+      or row.kind ~= nil and not ({ item = true, input = true, button = true })[row.kind]
+      or row.height ~= nil and not bounded(row.height, 12, 128)
+      or row.description ~= nil and not label(row.description)
+      or row.count ~= nil and not label(row.count)
+      or row.badge ~= nil and not (object(row.badge) and label(row.badge.text))
+      or row.actions ~= nil and not vim.islist(row.actions)
+      or not bounded(row.indent, 0, 16384)
+      or not vim.islist(row.guides)
+      or #row.guides > 64
+      or row.icon ~= nil and not label(row.icon)
+      or row.leading ~= nil and not label(row.leading)
+    then
+      return nil, "invalid list row"
+    end
+    for _, guide in ipairs(row.guides) do
+      if object(guide) then
+        if not bounded(guide.offset, 0, 16384) or not label(guide.id) then
+          return nil, "invalid guide"
+        end
+        groups[guide.id] = true
+      elseif not bounded(guide, 0, 16384) then
+        return nil, "invalid guide"
+      end
+    end
+    if ids[row.id] then
+      return nil, "duplicate row id"
+    end
+    ids[row.id] = true
+  end
+  if selected ~= vim.NIL and not ids[selected] then
+    return nil, "selected row missing"
+  end
+  return ids, groups
+end
+
 function M.validate(message, state)
   state = state or {}
   if type(message) ~= "table" or type(message.type) ~= "string" then
@@ -297,45 +342,49 @@ function M.validate(message, state)
     if state.revision and message.revision <= state.revision then
       return nil, "rows revision must increase"
     end
-    local ids, groups = {}, {}
-    for _, row in ipairs(message.rows) do
+    local ids, groups = check_rows(message.rows, message.selected)
+    if not ids then
+      return nil, groups
+    end
+    state.rows = message.rows
+    state.revision, state.ids, state.groups = message.revision, ids, groups
+  elseif message.type == "list_patch" then
+    if
+      not integer(message.revision)
+      or not integer(message.base)
+      or not vim.islist(message.splices)
+      or message.selected == nil
+    then
+      return nil, "list_patch needs revision, base, splices and selected"
+    end
+    if message.base ~= state.revision then
+      return nil, "patch base differs from rows"
+    end
+    if message.revision <= state.revision then
+      return nil, "rows revision must increase"
+    end
+    local rows, next_row = {}, 1
+    for _, splice in ipairs(message.splices) do
       if
-        not object(row)
-        or not label(row.id)
-        -- An input row's text is what has been typed into it, which starts empty.
-        or not (label(row.text) or row.kind == "input" and row.text == "")
-        or row.kind ~= nil and not ({ item = true, input = true, button = true })[row.kind]
-        or row.height ~= nil and not bounded(row.height, 12, 128)
-        or row.description ~= nil and not label(row.description)
-        or row.count ~= nil and not label(row.count)
-        or row.badge ~= nil and not (object(row.badge) and label(row.badge.text))
-        or row.actions ~= nil and not vim.islist(row.actions)
-        or not bounded(row.indent, 0, 16384)
-        or not vim.islist(row.guides)
-        or #row.guides > 64
-        or row.icon ~= nil and not label(row.icon)
-        or row.leading ~= nil and not label(row.leading)
+        not object(splice)
+        or not integer(splice.at)
+        or not integer(splice.delete)
+        or not vim.islist(splice.rows)
+        or splice.at + 1 < next_row
+        or splice.at + splice.delete > #state.rows
       then
-        return nil, "invalid list row"
+        return nil, "invalid splice"
       end
-      for _, guide in ipairs(row.guides) do
-        if object(guide) then
-          if not bounded(guide.offset, 0, 16384) or not label(guide.id) then
-            return nil, "invalid guide"
-          end
-          groups[guide.id] = true
-        elseif not bounded(guide, 0, 16384) then
-          return nil, "invalid guide"
-        end
-      end
-      if ids[row.id] then
-        return nil, "duplicate row id"
-      end
-      ids[row.id] = true
+      vim.list_extend(rows, state.rows, next_row, splice.at)
+      vim.list_extend(rows, splice.rows)
+      next_row = splice.at + splice.delete + 1
     end
-    if message.selected ~= vim.NIL and not ids[message.selected] then
-      return nil, "selected row missing"
+    vim.list_extend(rows, state.rows, next_row, #state.rows)
+    local ids, groups = check_rows(rows, message.selected)
+    if not ids then
+      return nil, groups
     end
+    state.rows = rows
     state.revision, state.ids, state.groups = message.revision, ids, groups
   elseif message.type == "list_state" then
     if

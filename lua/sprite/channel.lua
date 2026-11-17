@@ -210,8 +210,12 @@ Channel.valid_utf8 = valid_utf8
 -- vim.json.encode is several times faster than vim.fn.json_encode, which
 -- copies the message into Vim values first: a megabyte of rows took 8 ms
 -- against 2. It also writes a string holding a NUL byte as a string.
-local function encoded(self, message, authenticated)
-  local ok, json = pcall(vim.json.encode, message)
+-- `body`, when given, is the message already written as JSON.
+local function encoded(self, message, authenticated, body)
+  local ok, json = true, body
+  if not body then
+    ok, json = pcall(vim.json.encode, message)
+  end
   if not ok or not valid_utf8(json) then
     return nil, error_value("protocol", "cannot encode message")
   end
@@ -245,6 +249,7 @@ local function matches(message, item)
     local operation = ({
       assets = "assets",
       list_rows = "list_rows",
+      list_patch = "list_patch",
       list_state = "list_state",
       update = "update",
     })[item.message.type]
@@ -380,7 +385,10 @@ function Channel.connect(opts, callback)
   end
 end
 
-function Channel:request(message, expected_type, callback)
+-- `body`, when given, is `message` already written as JSON: the caller has
+-- encoded its parts and the channel sends them as they are. `message` still
+-- says what answer to expect.
+function Channel:request(message, expected_type, callback, body)
   if self.closed then
     teardown(callback, error_value("closed", "closed"))
     return
@@ -408,7 +416,7 @@ function Channel:request(message, expected_type, callback)
       end
     end
   end
-  local line, err = encoded(self, message)
+  local line, err = encoded(self, message, false, body)
   if not line then
     teardown(callback, err)
     return
