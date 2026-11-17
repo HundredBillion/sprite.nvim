@@ -150,8 +150,12 @@ if has_ffi and has_bit then
   local high = ffi.new("uint64_t", 0x80808080) * 0x100000000 + 0x80808080
   find_high = function(text, from)
     local length = #text
-    local bytes = ffi.cast(bytes_t, text)
     local i = (from or 1) - 1
+    -- Nothing is read past the end, whatever `from` is.
+    if i < 0 or i >= length then
+      return nil
+    end
+    local bytes = ffi.cast(bytes_t, text)
     local words = ffi.cast(words_t, bytes + i)
     local count = bit.rshift(length - i, 3)
     local word = 0

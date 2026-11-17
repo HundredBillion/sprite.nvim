@@ -523,3 +523,11 @@ do
   end
   server:close()
 end
+
+-- A search that starts at or past the end of the text reads nothing.
+do
+  local valid = Channel.valid_utf8
+  T.ok(valid("é"), "a character that ends the text")
+  T.ok(valid(("a"):rep(16) .. "é"), "a character that ends a longer text")
+  T.ok(not valid(("a"):rep(15) .. "\195"), "a character cut short at the end")
+end
