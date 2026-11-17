@@ -11,16 +11,25 @@ local function err(code, message)
   return { code = code, message = message or code }
 end
 
+-- Run a caller's function now, reporting an error it raises.
+local function call(fn, ...)
+  if not fn then
+    return
+  end
+  local ok, failure = pcall(fn, ...)
+  if not ok then
+    vim.notify("sprite callback: " .. tostring(failure), vim.log.levels.ERROR)
+  end
+end
+
+-- Run a caller's function in a later turn of the event loop.
 local function callback(fn, ...)
   if not fn then
     return
   end
   local args = { n = select("#", ...), ... }
   vim.schedule(function()
-    local ok, failure = pcall(fn, unpack(args, 1, args.n))
-    if not ok then
-      vim.notify("sprite callback: " .. tostring(failure), vim.log.levels.ERROR)
-    end
+    call(fn, unpack(args, 1, args.n))
   end)
 end
 
@@ -241,12 +250,7 @@ local function mutation(self, message, done)
     if not e and message.type == "list_rows" then
       owned[self].revision = message.revision
     end
-    if done then
-      local ok, failure = pcall(done, e)
-      if not ok then
-        vim.notify("sprite callback: " .. tostring(failure), vim.log.levels.ERROR)
-      end
-    end
+    call(done, e)
   end)
 end
 

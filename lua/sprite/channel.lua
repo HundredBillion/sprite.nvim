@@ -145,7 +145,9 @@ local has_ffi, ffi = pcall(require, "ffi")
 local has_bit, bit = pcall(require, "bit")
 if has_ffi and has_bit then
   local bytes_t, words_t = ffi.typeof("const uint8_t *"), ffi.typeof("const uint64_t *")
-  local high = ffi.new("uint64_t", 0x80808080) * 0x100000000ULL + 0x80808080ULL
+  -- The top bit of each of eight bytes. Built by arithmetic: a 64-bit
+  -- literal would stop this file loading where Lua is not LuaJIT.
+  local high = ffi.new("uint64_t", 0x80808080) * 0x100000000 + 0x80808080
   find_high = function(text, from)
     local length = #text
     local bytes = ffi.cast(bytes_t, text)
@@ -171,13 +173,14 @@ end
 -- encoding for one, is refused here and the Surface stays open. Only the
 -- bytes outside ASCII are looked at.
 local function valid_utf8(text)
+  -- A byte that continues a character.
+  local function tail(byte)
+    return byte and byte >= 0x80 and byte <= 0xBF
+  end
   local at = find_high(text)
   while at do
     local lead = text:byte(at)
     local a, b, c = text:byte(at + 1, at + 3)
-    local function tail(byte)
-      return byte and byte >= 0x80 and byte <= 0xBF
-    end
     local length
     if lead >= 0xC2 and lead <= 0xDF then
       length = tail(a) and 2
