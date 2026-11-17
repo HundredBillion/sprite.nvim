@@ -31,7 +31,7 @@ sprite-nvim README.md
 ```
 
 It takes exactly Neovim's arguments. Nothing is compiled; it runs the Neovim
-you already have (0.11 or later). Diagnostics go to
+you already have (0.12 or later). Diagnostics go to
 `~/.local/state/sprite-nvim/adapter.log`; `SPRITE_NVIM_TRACE=1` records every
 line in both directions.
 
@@ -56,7 +56,9 @@ Install the Lua API in ordinary Neovim with lazy.nvim:
 }
 ```
 
-The API loads in any Neovim 0.11 or later. When opening a dock, call
+The API loads in Neovim 0.12 or later; on an older one `require("sprite")`
+raises an error that says so, which a plugin that guards the call treats as
+no Sprite. When opening a dock, call
 `sprite.open(opts, callback)` directly:
 
 ```lua

@@ -16,7 +16,7 @@ local WORTHWHILE = 0.5
 -- Lists longer than this are not compared line by line in their changed part.
 local MAX_COMPARED = 50000
 
-local diff = vim.text and vim.text.diff or vim.diff
+local diff = vim.text.diff
 
 -- A place to remember each row table's JSON text, for a caller that passes
 -- the same table again for a row that has not changed. A row the caller no

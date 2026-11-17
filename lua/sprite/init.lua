@@ -1,3 +1,10 @@
+-- Neovim 0.12 is the floor: before it vim.json.encode writes a large whole
+-- number in exponent form, which would change a revision or a Surface id on
+-- its way to the host.
+if vim.fn.has("nvim-0.12") == 0 then
+  error("sprite.nvim needs Neovim 0.12 or later", 0)
+end
+
 local uv = vim.uv
 local unpack = table.unpack or unpack
 local Channel = require("sprite.channel")

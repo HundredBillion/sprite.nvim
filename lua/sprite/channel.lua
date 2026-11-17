@@ -210,22 +210,11 @@ Channel.valid_utf8 = valid_utf8
 -- vim.json.encode is several times faster than vim.fn.json_encode, which
 -- copies the message into Vim values first: a megabyte of rows took 8 ms
 -- against 2. It also writes a string holding a NUL byte as a string.
--- Neovim before 0.12 writes a whole number past fourteen digits in
--- exponent form, which loses a large revision or Surface id. There the
--- slower encoder, which is exact, is kept.
-local encode = vim.json.encode
-do
-  local ok, written = pcall(vim.json.encode, 9007199254740991)
-  if not ok or written ~= "9007199254740991" then
-    encode = vim.fn.json_encode
-  end
-end
-
 -- `body`, when given, is the message already written as JSON.
 local function encoded(self, message, authenticated, body)
   local ok, json = true, body
   if not body then
-    ok, json = pcall(encode, message)
+    ok, json = pcall(vim.json.encode, message)
   end
   if not ok or not valid_utf8(json) then
     return nil, error_value("protocol", "cannot encode message")
