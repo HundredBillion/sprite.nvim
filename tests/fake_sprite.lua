@@ -302,7 +302,14 @@ function M.validate(message, state)
       if
         not object(row)
         or not label(row.id)
-        or not label(row.text)
+        -- An input row's text is what has been typed into it, which starts empty.
+        or not (label(row.text) or row.kind == "input" and row.text == "")
+        or row.kind ~= nil and not ({ item = true, input = true, button = true })[row.kind]
+        or row.height ~= nil and not bounded(row.height, 12, 128)
+        or row.description ~= nil and not label(row.description)
+        or row.count ~= nil and not label(row.count)
+        or row.badge ~= nil and not (object(row.badge) and label(row.badge.text))
+        or row.actions ~= nil and not vim.islist(row.actions)
         or not bounded(row.indent, 0, 16384)
         or not vim.islist(row.guides)
         or #row.guides > 64
