@@ -227,22 +227,26 @@ local function end_handle(self, kind, failure)
   callback(self.on_close, { kind = kind, error = failure })
 end
 
+-- Send one change to the Surface. The request is written at once, and
+-- `done` runs in the same turn of the event loop that the channel reports
+-- the answer in: every extra turn waits behind whatever else Neovim is
+-- doing, a redraw or a finished job, before a frame can reach the screen.
 local function mutation(self, message, done)
   if self.closed then
     callback(done, err("closed"))
     return
   end
-  vim.schedule(function()
-    if self.closed then
-      callback(done, err("closed"))
-      return
+  -- The channel always answers from a scheduled callback, never from here.
+  owned[self].channel:request(message, "applied", function(e)
+    if not e and message.type == "list_rows" then
+      owned[self].revision = message.revision
     end
-    owned[self].channel:request(message, "applied", function(e)
-      if not e and message.type == "list_rows" then
-        owned[self].revision = message.revision
+    if done then
+      local ok, failure = pcall(done, e)
+      if not ok then
+        vim.notify("sprite callback: " .. tostring(failure), vim.log.levels.ERROR)
       end
-      callback(done, e)
-    end)
+    end
   end)
 end
 
