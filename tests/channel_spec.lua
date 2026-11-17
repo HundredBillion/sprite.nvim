@@ -446,3 +446,88 @@ do
   server:close()
   uv.fs_unlink(path)
 end
+
+-- Only well-formed UTF-8 is sent: the host ends a connection that sends
+-- anything else.
+do
+  local valid = Channel.valid_utf8
+  for _, text in ipairs({ "", "abc", "é", "↑ main", "日本語", "😀", "\u{10FFFF}", "a\0b" }) do
+    T.ok(valid(text), "well-formed text is accepted: " .. vim.inspect(text))
+  end
+  for _, text in ipairs({
+    "\255",
+    "\192\128", -- an overlong NUL
+    "\224\128\128", -- an overlong three-byte form
+    "\237\160\128", -- half of a UTF-16 pair
+    "\244\144\128\128", -- past U+10FFFF
+    "a\226\130", -- cut short
+    "\128", -- a tail byte alone
+  }) do
+    T.ok(not valid(text), "malformed text is refused: " .. vim.inspect(text))
+  end
+  -- A bad byte is found wherever it falls among the eight read at a time.
+  local missed = 0
+  for length = 1, 40 do
+    for at = 1, length do
+      local before, after = ("a"):rep(at - 1), ("a"):rep(length - at)
+      if not valid(before .. "é" .. after) or valid(before .. "\255" .. after) then
+        missed = missed + 1
+      end
+    end
+  end
+  T.eq(missed, 0, "every position in a short string is checked")
+end
+
+do
+  local Fake = dofile("tests/fake_sprite.lua")
+  local path = vim.fn.tempname() .. ".sock"
+  local server = Fake.serve(path, { ack_delay_ms = 1 })
+  local results, channel = {}, nil
+  Channel.connect({
+    path = path,
+    key = "secret",
+    first = {
+      type = "open",
+      version = 1,
+      pane = "f00d:1",
+      owner_pid = uv.os_getpid(),
+      position = "fill",
+      focus = true,
+      description = vim.empty_dict(),
+    },
+    timeout_ms = 2000,
+  }, function(err, ch)
+    T.eq(err, nil, "fake accepts open")
+    channel = ch
+    if not ch then
+      return
+    end
+    -- A file name in an old encoding is refused here, before it is sent.
+    ch:request({ type = "assets", entries = { ["bad\255name"] = "<svg/>" } }, "applied", function(e)
+      results[#results + 1] = e and e.code or "ok"
+    end)
+    ch:request({ type = "assets", entries = { ["naïve ↑"] = "<svg/>" } }, "applied", function(e)
+      results[#results + 1] = e and e.code or "ok"
+    end)
+  end)
+  T.ok(
+    vim.wait(2000, function()
+      return #results == 2
+    end),
+    "both requests are answered"
+  )
+  T.eq(results, { "protocol", "ok" }, "malformed text is refused and the channel stays open")
+  T.ok(channel and not channel.closed, "the channel is still open")
+  if channel then
+    channel:close()
+  end
+  server:close()
+end
+
+-- A search that starts at or past the end of the text reads nothing.
+do
+  local valid = Channel.valid_utf8
+  T.ok(valid("é"), "a character that ends the text")
+  T.ok(valid(("a"):rep(16) .. "é"), "a character that ends a longer text")
+  T.ok(not valid(("a"):rep(15) .. "\195"), "a character cut short at the end")
+end

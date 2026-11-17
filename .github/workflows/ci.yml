@@ -9,7 +9,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
-        nvim: ["v0.11.0", "stable", "nightly"]
+        nvim: ["stable", "nightly"]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -33,7 +33,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: HundredBillion/Sprite
-          ref: 45661fbee477b7628b291e5e306664da469e3d5a
+          ref: 7ce0795b6458d72f5bbe34b109ec7339bb61694b
           path: .test/sprite
       - uses: rhysd/action-setup-vim@v1
         with:

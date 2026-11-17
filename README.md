@@ -31,7 +31,7 @@ sprite-nvim README.md
 ```
 
 It takes exactly Neovim's arguments. Nothing is compiled; it runs the Neovim
-you already have (0.11 or later). Diagnostics go to
+you already have (0.12 or later). Diagnostics go to
 `~/.local/state/sprite-nvim/adapter.log`; `SPRITE_NVIM_TRACE=1` records every
 line in both directions.
 
@@ -56,7 +56,9 @@ Install the Lua API in ordinary Neovim with lazy.nvim:
 }
 ```
 
-The API loads in any Neovim 0.11 or later. When opening a dock, call
+The API loads in Neovim 0.12 or later; on an older one `require("sprite")`
+raises an error that says so, which a plugin that guards the call treats as
+no Sprite. When opening a dock, call
 `sprite.open(opts, callback)` directly:
 
 ```lua
@@ -93,6 +95,25 @@ strikethrough, and icon buttons on rows and headers. Rows pass through
 [technical reference](https://github.com/HundredBillion/Sprite/blob/master/docs/technical-reference.md).
 A row button arrives in `on_event` as
 `{ type = "list_action", action = "stage", row = "<row id>" }`.
+
+`dock:rows(revision, rows, selected, callback)` takes the whole list every
+time. What is sent depends on the host: one that lists
+`virtual-list-patch-v1` is sent only the rows that differ from the last list,
+and any other is sent all of them. A plugin calls `rows` the same way for
+both and need not check the feature.
+
+Finding the rows that differ means writing each row out as text, which is
+most of what an unchanged list costs. A plugin can spare that by opening the
+dock with `reuse_rows = true` and passing the same row table again for a row
+that has not changed:
+
+```lua
+sprite.open({ side = "left", width = 300, description = description, reuse_rows = true }, ...)
+```
+
+With `reuse_rows`, a row table that has been passed before is taken to be
+unchanged. Build a new table for a row that changes; changing a table in
+place after passing it would not be noticed.
 
 `open` waits for the current UI context and checks native dock capability and
 eligibility itself. A preceding `sprite.available(callback)` repeats that

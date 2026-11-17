@@ -1,7 +1,15 @@
+-- Neovim 0.12 is the floor: before it vim.json.encode writes a large whole
+-- number in exponent form, which would change a revision or a Surface id on
+-- its way to the host.
+if vim.fn.has("nvim-0.12") == 0 then
+  error("sprite.nvim needs Neovim 0.12 or later", 0)
+end
+
 local uv = vim.uv
 local unpack = table.unpack or unpack
 local Channel = require("sprite.channel")
 local Session = require("sprite.session")
+local Rows = require("sprite.rows")
 local M = { session = Session }
 local REQUIRED = { "owned-dock-v1", "virtual-list-v1", "svg-assets-v1", "dock-resize-v1" }
 local handles, pending, resumes, active = {}, {}, {}, {}
@@ -11,16 +19,25 @@ local function err(code, message)
   return { code = code, message = message or code }
 end
 
+-- Run a caller's function now, reporting an error it raises.
+local function call(fn, ...)
+  if not fn then
+    return
+  end
+  local ok, failure = pcall(fn, ...)
+  if not ok then
+    vim.notify("sprite callback: " .. tostring(failure), vim.log.levels.ERROR)
+  end
+end
+
+-- Run a caller's function in a later turn of the event loop.
 local function callback(fn, ...)
   if not fn then
     return
   end
   local args = { n = select("#", ...), ... }
   vim.schedule(function()
-    local ok, failure = pcall(fn, unpack(args, 1, args.n))
-    if not ok then
-      vim.notify("sprite callback: " .. tostring(failure), vim.log.levels.ERROR)
-    end
+    call(fn, unpack(args, 1, args.n))
   end)
 end
 
@@ -227,23 +244,23 @@ local function end_handle(self, kind, failure)
   callback(self.on_close, { kind = kind, error = failure })
 end
 
-local function mutation(self, message, done)
+-- Send one change to the Surface. The request is written at once, and
+-- `done` runs in the same turn of the event loop that the channel reports
+-- the answer in: every extra turn waits behind whatever else Neovim is
+-- doing, a redraw or a finished job, before a frame can reach the screen.
+-- `body`, when given, is `message` already written as JSON.
+local function mutation(self, message, done, body)
   if self.closed then
     callback(done, err("closed"))
     return
   end
-  vim.schedule(function()
-    if self.closed then
-      callback(done, err("closed"))
-      return
+  -- The channel always answers from a scheduled callback, never from here.
+  owned[self].channel:request(message, "applied", function(e)
+    if not e and (message.type == "list_rows" or message.type == "list_patch") then
+      owned[self].revision = message.revision
     end
-    owned[self].channel:request(message, "applied", function(e)
-      if not e and message.type == "list_rows" then
-        owned[self].revision = message.revision
-      end
-      callback(done, e)
-    end)
-  end)
+    call(done, e)
+  end, body)
 end
 
 function Handle:assets(entries, done)
@@ -262,13 +279,54 @@ function Handle:update(description, done)
   mutation(self, { type = "update", description = description }, done)
 end
 
+-- Replace the list's rows. A host that takes `list_patch` is sent only the
+-- rows that differ from the last list sent; the caller hands over every row
+-- either way and need not know which happened.
 function Handle:rows(revision, rows, selected, done)
-  mutation(self, {
-    type = "list_rows",
-    revision = revision,
-    rows = rows or {},
-    selected = selected == nil and vim.NIL or selected,
-  }, done)
+  if self.closed then
+    callback(done, err("closed"))
+    return
+  end
+  if type(revision) ~= "number" or revision % 1 ~= 0 or type(rows or {}) ~= "table" then
+    callback(done, err("protocol", "rows needs a whole revision and a list of rows"))
+    return
+  end
+  local state = owned[self]
+  local lines = Rows.lines(rows or {}, state.memory)
+  local selected_ok = selected == nil or selected == vim.NIL or type(selected) == "string"
+  if not lines or not selected_ok then
+    callback(done, err("protocol", "cannot encode message"))
+    return
+  end
+  -- The whole list is a megabyte of text, written out only when it is sent.
+  local function whole(answer)
+    mutation(
+      self,
+      { type = "list_rows", revision = revision },
+      answer,
+      Rows.whole(revision, selected, lines)
+    )
+  end
+  local sent = state.sent
+  -- What the host holds once this request is answered, if it is accepted.
+  state.sent = { revision = revision, lines = lines }
+  local patch
+  if sent and (self.features or {})[Rows.FEATURE] then
+    patch = Rows.patch(revision, sent.revision, selected, Rows.splices(sent.lines, lines), lines)
+  end
+  if not patch then
+    whole(done)
+    return
+  end
+  mutation(self, { type = "list_patch", revision = revision }, function(e)
+    if not e or e.code ~= "refused" or self.closed then
+      call(done, e)
+      return
+    end
+    -- The host did not hold the rows this patch was made against, as when an
+    -- earlier request was refused. The whole list says the same thing.
+    whole(done)
+  end, patch)
 end
 
 function Handle:state(revision, patch, done)
@@ -381,7 +439,9 @@ function M.open(opts, done)
         features = discovered.features,
         limits = discovered.limits,
       }, Handle)
-      owned[handle] = { context = context }
+      -- `reuse_rows` is the caller's word that a row table it passes again
+      -- is unchanged, so its text is kept and not worked out again.
+      owned[handle] = { context = context, memory = opts.reuse_rows and Rows.memory() or nil }
       cancel_open = exchange(
         context,
         {

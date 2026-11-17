@@ -2,6 +2,10 @@ local uv = vim.uv
 local unpack = table.unpack or unpack
 local LIMIT = 16 * 1024 * 1024
 local CALLBACK_BYTES = 64
+-- The socket's send buffer. A Unix socket's default holds a few kilobytes,
+-- so a megabyte of rows left Neovim in over a hundred pieces, each waiting
+-- for a turn of the event loop that was busy with other work.
+local SEND_BUFFER = 4 * 1024 * 1024
 local Channel = {}
 
 local function error_value(code, message)
@@ -131,9 +135,92 @@ local function deadline(self, milliseconds, code)
   end)
 end
 
-local function encoded(self, message, authenticated)
-  local ok, json = pcall(vim.fn.json_encode, message)
-  if not ok then
+-- The first byte outside ASCII at or after `from`, or nil. A megabyte of rows
+-- is searched on every frame, and a Lua pattern takes 10 ms to do it; with
+-- LuaJIT's FFI the bytes are read eight at a time, in a fraction of one.
+local function find_high(text, from)
+  return text:find("[\128-\255]", from)
+end
+local has_ffi, ffi = pcall(require, "ffi")
+local has_bit, bit = pcall(require, "bit")
+if has_ffi and has_bit then
+  local bytes_t, words_t = ffi.typeof("const uint8_t *"), ffi.typeof("const uint64_t *")
+  -- The top bit of each of eight bytes. Built by arithmetic: a 64-bit
+  -- literal would stop this file loading where Lua is not LuaJIT.
+  local high = ffi.new("uint64_t", 0x80808080) * 0x100000000 + 0x80808080
+  find_high = function(text, from)
+    local length = #text
+    local i = (from or 1) - 1
+    -- Nothing is read past the end, whatever `from` is.
+    if i < 0 or i >= length then
+      return nil
+    end
+    local bytes = ffi.cast(bytes_t, text)
+    local words = ffi.cast(words_t, bytes + i)
+    local count = bit.rshift(length - i, 3)
+    local word = 0
+    while word < count and bit.band(words[word], high) == 0 do
+      word = word + 1
+    end
+    i = i + word * 8
+    while i < length do
+      if bytes[i] >= 0x80 then
+        return i + 1
+      end
+      i = i + 1
+    end
+  end
+end
+
+-- True when `text` is well-formed UTF-8. The host ends a connection that
+-- sends anything else, so a request holding such text, a file name in an old
+-- encoding for one, is refused here and the Surface stays open. Only the
+-- bytes outside ASCII are looked at.
+local function valid_utf8(text)
+  -- A byte that continues a character.
+  local function tail(byte)
+    return byte and byte >= 0x80 and byte <= 0xBF
+  end
+  local at = find_high(text)
+  while at do
+    local lead = text:byte(at)
+    local a, b, c = text:byte(at + 1, at + 3)
+    local length
+    if lead >= 0xC2 and lead <= 0xDF then
+      length = tail(a) and 2
+    elseif lead == 0xE0 then
+      length = a and a >= 0xA0 and a <= 0xBF and tail(b) and 3
+    elseif lead == 0xED then
+      -- U+D800 to U+DFFF are halves of a UTF-16 pair, not characters.
+      length = a and a >= 0x80 and a <= 0x9F and tail(b) and 3
+    elseif lead >= 0xE1 and lead <= 0xEF then
+      length = tail(a) and tail(b) and 3
+    elseif lead == 0xF0 then
+      length = a and a >= 0x90 and a <= 0xBF and tail(b) and tail(c) and 4
+    elseif lead >= 0xF1 and lead <= 0xF3 then
+      length = tail(a) and tail(b) and tail(c) and 4
+    elseif lead == 0xF4 then
+      length = a and a >= 0x80 and a <= 0x8F and tail(b) and tail(c) and 4
+    end
+    if not length then
+      return false
+    end
+    at = find_high(text, at + length)
+  end
+  return true
+end
+Channel.valid_utf8 = valid_utf8
+
+-- vim.json.encode is several times faster than vim.fn.json_encode, which
+-- copies the message into Vim values first: a megabyte of rows took 8 ms
+-- against 2. It also writes a string holding a NUL byte as a string.
+-- `body`, when given, is the message already written as JSON.
+local function encoded(self, message, authenticated, body)
+  local ok, json = true, body
+  if not body then
+    ok, json = pcall(vim.json.encode, message)
+  end
+  if not ok or not valid_utf8(json) then
     return nil, error_value("protocol", "cannot encode message")
   end
   local line = (authenticated and self.key .. " " or "") .. json .. "\n"
@@ -166,6 +253,7 @@ local function matches(message, item)
     local operation = ({
       assets = "assets",
       list_rows = "list_rows",
+      list_patch = "list_patch",
       list_state = "list_state",
       update = "update",
     })[item.message.type]
@@ -260,6 +348,8 @@ function Channel.connect(opts, callback)
       if self.closed then
         return
       end
+      -- The system may allow less than is asked for, or refuse; either is fine.
+      pcall(self.pipe.send_buffer_size, self.pipe, SEND_BUFFER)
       self.pipe:read_start(function(read_err, bytes)
         if self.closed then
           return
@@ -299,7 +389,10 @@ function Channel.connect(opts, callback)
   end
 end
 
-function Channel:request(message, expected_type, callback)
+-- `body`, when given, is `message` already written as JSON: the caller has
+-- encoded its parts and the channel sends them as they are. `message` still
+-- says what answer to expect.
+function Channel:request(message, expected_type, callback, body)
   if self.closed then
     teardown(callback, error_value("closed", "closed"))
     return
@@ -327,7 +420,7 @@ function Channel:request(message, expected_type, callback)
       end
     end
   end
-  local line, err = encoded(self, message)
+  local line, err = encoded(self, message, false, body)
   if not line then
     teardown(callback, err)
     return
