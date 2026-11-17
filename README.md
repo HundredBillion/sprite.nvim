@@ -75,6 +75,25 @@ sprite.open({
 end)
 ```
 
+The opened dock carries what the host supports as `dock.features`, a set
+keyed by feature name, and its `dock.limits`. Check a feature before relying
+on it, and keep the plugin's ordinary view when it is missing:
+
+```lua
+if not dock.features["virtual-list-rows-v2"] then
+  dock:close()
+  return -- this host draws plain rows only
+end
+```
+
+`virtual-list-rows-v2` adds decorated rows to a `virtual_list`: per-row
+heights, input and button rows, a dimmed description, a badge, a count,
+strikethrough, and icon buttons on rows and headers. Rows pass through
+`dock:rows` unchanged, so the fields are the ones in Sprite's
+[technical reference](https://github.com/HundredBillion/Sprite/blob/master/docs/technical-reference.md).
+A row button arrives in `on_event` as
+`{ type = "list_action", action = "stage", row = "<row id>" }`.
+
 `open` waits for the current UI context and checks native dock capability and
 eligibility itself. A preceding `sprite.available(callback)` repeats that
 discovery, so use `available` only when checking whether this editor is in an

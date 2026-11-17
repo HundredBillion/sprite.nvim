@@ -365,7 +365,7 @@ function M.open(opts, done)
       finish(e)
       return
     end
-    cancel_discovery = capabilities(context, deadline, function(discovery_err)
+    cancel_discovery = capabilities(context, deadline, function(discovery_err, discovered)
       if cancelled then
         return
       end
@@ -373,7 +373,14 @@ function M.open(opts, done)
         finish(discovery_err)
         return
       end
-      local handle = setmetatable({ on_event = opts.on_event, on_close = opts.on_close }, Handle)
+      -- `features` lets a plugin use what a newer host draws, such as
+      -- "virtual-list-rows-v2", and fall back when the host lacks it.
+      local handle = setmetatable({
+        on_event = opts.on_event,
+        on_close = opts.on_close,
+        features = discovered.features,
+        limits = discovered.limits,
+      }, Handle)
       owned[handle] = { context = context }
       cancel_open = exchange(
         context,
