@@ -78,6 +78,7 @@ T.eq(
   "a host without a bottom dock is not asked for one"
 )
 T.eq(#host:messages("open"), opened_before, "and nothing is opened at a side instead")
+T.eq(unsupported and unsupported.feature, "dock-bottom-v1", "and the feature it lacks is named")
 host.lacks = nil
 local bottom_problem, bottom = open_bottom()
 T.eq(bottom_problem, nil, "a bottom dock opens on a host that has one")

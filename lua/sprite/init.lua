@@ -443,9 +443,13 @@ function M.open(opts, done)
         finish(discovery_err)
         return
       end
-      -- An older host has docks at the sides only, and would put this one at the left.
+      -- An older host has docks at the sides only and refuses a side it does
+      -- not know. Saying `unsupported` here, before asking, tells the caller
+      -- to fall back, and names the feature it lacks.
       if bottom and not discovered.features[BOTTOM] then
-        finish(err("unsupported", "this Sprite Terminal has no bottom dock"))
+        local problem = err("unsupported", "this Sprite Terminal has no bottom dock")
+        problem.feature = BOTTOM
+        finish(problem)
         return
       end
       -- `features` lets a plugin use what a newer host draws, such as

@@ -91,7 +91,10 @@ end
 A dock can also sit under the editor, on a host that lists `dock-bottom-v1`.
 It is sized by its height in pixels, not a width, and takes that height from
 the editor's rows. On a host without the feature `open` answers with the
-error code `unsupported` and opens nothing:
+error code `unsupported`, with `feature = "dock-bottom-v1"`, and opens
+nothing. When the reader drags a dock's edge, `on_event` receives
+`{ type = "dock_size", width = <pixels> }` for a side dock and
+`{ type = "dock_size", height = <pixels> }` for a bottom dock:
 
 ```lua
 sprite.open({ side = "bottom", height = 240, description = description }, function(err, dock)
