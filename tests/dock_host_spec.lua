@@ -70,6 +70,7 @@ local function open_bottom(options)
   return failure, dock
 end
 local opened_before = #host:messages("open")
+host.lacks = { "dock-bottom-v1" }
 local unsupported = open_bottom()
 T.eq(
   unsupported and unsupported.code,
@@ -77,7 +78,7 @@ T.eq(
   "a host without a bottom dock is not asked for one"
 )
 T.eq(#host:messages("open"), opened_before, "and nothing is opened at a side instead")
-host.features = { "dock-bottom-v1" }
+host.lacks = nil
 local bottom_problem, bottom = open_bottom()
 T.eq(bottom_problem, nil, "a bottom dock opens on a host that has one")
 local sent = host:messages("open")
@@ -86,7 +87,6 @@ T.eq(sent[#sent].size, 240, "its size is its height")
 assert(bottom):close()
 T.eq((open_bottom({ height = 8 })).code, "protocol", "a bottom dock needs a sensible height")
 T.eq((open_bottom({ height = false, width = 300 })).code, "protocol", "and is not sized by a width")
-host.features = nil
 host:close()
 
 local invalid_host = Host.start()
