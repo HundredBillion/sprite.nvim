@@ -12,6 +12,8 @@ local Session = require("sprite.session")
 local Rows = require("sprite.rows")
 local M = { session = Session }
 local REQUIRED = { "owned-dock-v1", "virtual-list-v1", "svg-assets-v1", "dock-resize-v1" }
+-- The host feature that places a dock under the editor.
+local BOTTOM = "dock-bottom-v1"
 local handles, pending, resumes, active = {}, {}, {}, {}
 local exiting = false
 
@@ -381,13 +383,23 @@ function M.open(opts, done)
     callback(done, err("closed"))
     return
   end
+  -- A dock at the bottom is sized by its height; one at a side by its width.
+  local bottom = type(opts) == "table" and opts.side == "bottom"
+  local size
+  if type(opts) == "table" then
+    if bottom then
+      size = opts.height
+    else
+      size = opts.width
+    end
+  end
   if
     type(opts) ~= "table"
-    or (opts.side ~= "left" and opts.side ~= "right")
-    or type(opts.width) ~= "number"
-    or opts.width < 64
-    or opts.width > 4096
-    or opts.width ~= math.floor(opts.width)
+    or (opts.side ~= "left" and opts.side ~= "right" and not bottom)
+    or type(size) ~= "number"
+    or size < 64
+    or size > 4096
+    or size ~= math.floor(size)
     or type(opts.description) ~= "table"
   then
     callback(done, err("protocol", "invalid dock options"))
@@ -431,6 +443,11 @@ function M.open(opts, done)
         finish(discovery_err)
         return
       end
+      -- An older host has docks at the sides only, and would put this one at the left.
+      if bottom and not discovered.features[BOTTOM] then
+        finish(err("unsupported", "this Sprite Terminal has no bottom dock"))
+        return
+      end
       -- `features` lets a plugin use what a newer host draws, such as
       -- "virtual-list-rows-v2", and fall back when the host lacks it.
       local handle = setmetatable({
@@ -450,7 +467,7 @@ function M.open(opts, done)
           pane = context.pane,
           position = "dock",
           side = opts.side,
-          size = opts.width,
+          size = size,
           focus = false,
           description = opts.description,
           owner_pid = context.pid,

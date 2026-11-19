@@ -76,6 +76,11 @@ function M.start()
         elseif message.type == "capabilities" then
           response = host.refuse and { type = "refused", reason = "test refusal" }
             or fixture.capabilities.reply
+          -- A test may say what else this host can do.
+          if response.type == "capabilities" and host.features then
+            response = vim.deepcopy(response)
+            vim.list_extend(response.features, host.features)
+          end
         elseif message.type == "token" then
           response = { type = "registered" }
         elseif message.type == "open" then

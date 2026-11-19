@@ -47,6 +47,46 @@ vim.env.SPRITE_PANE = host.pane
 local restored, handle = open()
 T.eq(restored, nil, "native discovery recovers after refusal")
 assert(handle):close()
+
+-- A dock under the editor: sized by its height, and only on a host that has one.
+local function open_bottom(options)
+  local done, failure, dock = false
+  sprite.open(
+    vim.tbl_extend(
+      "force",
+      { side = "bottom", height = 240, description = { version = 1, root = { kind = "box" } } },
+      options or {}
+    ),
+    function(e, h)
+      failure, dock, done = e, h, true
+    end
+  )
+  assert(
+    vim.wait(3000, function()
+      return done
+    end),
+    "bottom dock request completes"
+  )
+  return failure, dock
+end
+local opened_before = #host:messages("open")
+local unsupported = open_bottom()
+T.eq(
+  unsupported and unsupported.code,
+  "unsupported",
+  "a host without a bottom dock is not asked for one"
+)
+T.eq(#host:messages("open"), opened_before, "and nothing is opened at a side instead")
+host.features = { "dock-bottom-v1" }
+local bottom_problem, bottom = open_bottom()
+T.eq(bottom_problem, nil, "a bottom dock opens on a host that has one")
+local sent = host:messages("open")
+T.eq(sent[#sent].side, "bottom", "the dock is asked for at the bottom")
+T.eq(sent[#sent].size, 240, "its size is its height")
+assert(bottom):close()
+T.eq((open_bottom({ height = 8 })).code, "protocol", "a bottom dock needs a sensible height")
+T.eq((open_bottom({ height = false, width = 300 })).code, "protocol", "and is not sized by a width")
+host.features = nil
 host:close()
 
 local invalid_host = Host.start()

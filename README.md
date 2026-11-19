@@ -88,6 +88,19 @@ if not dock.features["virtual-list-rows-v2"] then
 end
 ```
 
+A dock can also sit under the editor, on a host that lists `dock-bottom-v1`.
+It is sized by its height in pixels, not a width, and takes that height from
+the editor's rows. On a host without the feature `open` answers with the
+error code `unsupported` and opens nothing:
+
+```lua
+sprite.open({ side = "bottom", height = 240, description = description }, function(err, dock)
+  if err then
+    return -- draw in an ordinary Neovim window instead
+  end
+end)
+```
+
 `virtual-list-rows-v2` adds decorated rows to a `virtual_list`: per-row
 heights, input and button rows, a dimmed description, a badge, a count,
 strikethrough, and icon buttons on rows and headers. Rows pass through
