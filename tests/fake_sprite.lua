@@ -276,7 +276,7 @@ function M.validate(message, state)
     if
       message.position == "dock"
       and (
-        message.side ~= "left" and message.side ~= "right"
+        message.side ~= "left" and message.side ~= "right" and message.side ~= "bottom"
         or not integer(message.size)
         or message.return_target == nil
       )
